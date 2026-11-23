@@ -1,0 +1,19 @@
+@* Kök bileşen: Fluent tema sağlayıcısı + uygulama kabuğu *@
+@implements IDisposable
+@inject ThemeService Theme
+
+<FluentDesignTheme Mode="@Theme.FluentMode"
+                   OfficeColor="OfficeColor.Excel"
+                   OnLuminanceChanged="OnLuminanceChanged" />
+
+<Shell />
+
+@code {
+    protected override void OnInitialized() => Theme.Changed += OnThemeChanged;
+
+    private void OnLuminanceChanged(LuminanceChangedEventArgs e) => Theme.ReportLuminance(e.IsDark);
+
+    private void OnThemeChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Theme.Changed -= OnThemeChanged;
+}

@@ -1,0 +1,168 @@
+@* 2. Adım: Sayfa seçimi, başlık ayarları ve ham veri önizlemesi *@
+@inherits StateComponent
+
+<h1 class="step-title">Sayfa</h1>
+<p class="step-desc">Dönüştürülecek sayfayı seçin ve başlık/veri satırlarını ayarlayın.</p>
+
+@if (State.Workbook is not { } wb)
+{
+    <div class="message-bar info">
+        Önce bir Excel dosyası açın.
+        <span class="grow"></span>
+        <FluentButton Appearance="Appearance.Accent" OnClick="() => State.GoTo(WizardStep.File)">Dosya seç</FluentButton>
+    </div>
+    return;
+}
+
+<div class="sheet-grid" role="listbox" aria-label="Sayfalar">
+    @foreach (var s in wb.Sheets)
+    {
+        var selected = s.Name == State.Profile.SheetName;
+        <button class="sheet-card @(selected ? "selected" : "")" role="option" aria-selected="@selected"
+                @onclick="() => Select(s)" disabled="@s.IsEmpty" title="@(s.IsEmpty ? "Boş sayfa" : s.Name)">
+            <span class="name">
+                <FluentIcon Value="@(new Icons.Regular.Size16.Table())" Color="@(selected ? Color.Accent : Color.Neutral)" />
+                <span class="ellipsis">@s.Name</span>
+                @if (s.IsHidden) { <span class="tag warn">gizli</span> }
+                @if (s.IsEmpty) { <span class="tag">boş</span> }
+            </span>
+            @if (!s.IsEmpty)
+            {
+                <span class="meta mono">@s.UsedRange</span>
+                <span class="meta">~@s.RowCount.ToString("N0") satır × @s.ColumnCount sütun</span>
+            }
+        </button>
+    }
+</div>
+
+@if (State.SuggestedProfile is { } suggestion)
+{
+    <div class="message-bar info">
+        <FluentIcon Value="@(new Icons.Regular.Size20.History())" Color="Color.Accent" />
+        <span>Bu dosya ve sayfa için kayıtlı bir profil bulundu: <b>@suggestion.Name</b>
+            <span class="muted">(@suggestion.UpdatedAt.ToLocalTime().ToString("g"))</span></span>
+        <span class="grow"></span>
+        <FluentButton Appearance="Appearance.Accent" OnClick="State.ApplySuggestedProfileAsync">Profili uygula</FluentButton>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="State.DismissSuggestedProfile">Yoksay</FluentButton>
+    </div>
+}
+
+@if (State.ProfileWarnings.Count > 0)
+{
+    <div class="message-bar warning">
+        <FluentIcon Value="@(new Icons.Regular.Size20.Warning())" CustomColor="var(--x-warning)" Color="Color.Custom" />
+        <div>
+            <b>Profil uyarıları</b>
+            <ul>@foreach (var w in State.ProfileWarnings) { <li>@w</li> }</ul>
+        </div>
+    </div>
+}
+
+@if (State.HasSheet)
+{
+    var o = State.Profile.ReadOptions;
+    var sheet = State.Sheet!;
+    <div class="card">
+        <h3><FluentIcon Value="@(new Icons.Regular.Size20.Settings())" Color="Color.Neutral" /> Başlık ve satır ayarları</h3>
+        <div class="grid-2">
+            <div class="field">
+                <label for="hdr">Başlık satırı</label>
+                <input id="hdr" type="number" class="x-input" min="1" disabled="@o.NoHeader"
+                       value="@(o.HeaderRow?.ToString() ?? "")" placeholder="@sheet.FirstRow (ilk satır)"
+                       @onchange="e => SetInt(e, v => o.HeaderRow = v)" />
+            </div>
+            <div class="field">
+                <label for="ds">Veri başlangıç satırı</label>
+                <input id="ds" type="number" class="x-input" min="1" value="@(o.DataStartRow?.ToString() ?? "")"
+                       placeholder="@(State.Schema?.DataStartRow) (otomatik)" @onchange="e => SetInt(e, v => o.DataStartRow = v)" />
+            </div>
+            <div class="field">
+                <label for="de">Veri bitiş satırı (opsiyonel)</label>
+                <input id="de" type="number" class="x-input" min="1" value="@(o.DataEndRow?.ToString() ?? "")"
+                       placeholder="@sheet.LastRow (son satır)" @onchange="e => SetInt(e, v => o.DataEndRow = v)" />
+            </div>
+        </div>
+        <div class="row" style="margin-top:14px; gap:20px">
+            <label class="check-label" title="Sütun adları A, B, C… olur">
+                <input type="checkbox" class="x-check" checked="@o.NoHeader" @onchange="e => SetBool(e, v => o.NoHeader = v)" /> Başlık yok
+            </label>
+            <label class="check-label">
+                <input type="checkbox" class="x-check" checked="@o.SkipEmptyRows" @onchange="e => SetBool(e, v => o.SkipEmptyRows = v)" /> Tamamen boş satırları atla
+            </label>
+            <label class="check-label">
+                <input type="checkbox" class="x-check" checked="@o.IncludeHiddenRows" @onchange="e => SetBool(e, v => o.IncludeHiddenRows = v)" /> Gizli satırları dahil et
+            </label>
+            <label class="check-label">
+                <input type="checkbox" class="x-check" checked="@o.IncludeHiddenColumns" @onchange="e => SetBool(e, v => o.IncludeHiddenColumns = v)" /> Gizli sütunları dahil et
+            </label>
+            <label class="check-label" title="Birleştirilmiş hücrenin değeri aralıktaki tüm hücrelere kopyalanır">
+                <input type="checkbox" class="x-check" checked="@o.SpreadMergedCells" @onchange="e => SetBool(e, v => o.SpreadMergedCells = v)" /> Birleştirilmiş hücre değerini yay
+            </label>
+        </div>
+        @foreach (var m in State.Validation.Messages.Where(m => m.Area == ValidationArea.Sheet))
+        {
+            <div class="@(m.Severity == ValidationSeverity.Error ? "text-error" : "text-warning")" style="margin-top:8px">@m.Message</div>
+        }
+        <div class="row end" style="margin-top:8px">
+            <span class="muted">@State.Schema?.Columns.Count sütun bulundu</span>
+            <FluentButton Appearance="Appearance.Accent" OnClick="() => State.GoTo(WizardStep.Fields)"
+                          IconEnd="@(new Icons.Regular.Size16.ChevronRight())">Alanlara geç</FluentButton>
+        </div>
+    </div>
+
+    @if (State.RawPreview is { } raw && raw.Rows.Count > 0)
+    {
+        var schema = State.Schema!;
+        <div class="card">
+            <h3>
+                <FluentIcon Value="@(new Icons.Regular.Size20.Eye())" Color="Color.Neutral" /> Ham veri önizleme
+                <span class="muted" style="font-weight:400">(ilk @raw.Rows.Count satır)</span>
+            </h3>
+            <div class="table-wrap">
+                <table class="raw">
+                    <thead>
+                        <tr>
+                            <th class="rn">#</th>
+                            @foreach (var l in raw.ColumnLetters) { <th>@l</th> }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in raw.Rows)
+                        {
+                            var isHeader = schema.HeaderRow == r.RowNumber;
+                            var outOfRange = !isHeader && (r.RowNumber < schema.DataStartRow || r.RowNumber > schema.DataEndRow);
+                            <tr class="@(isHeader ? "header-row" : "") @(outOfRange ? "out-of-range" : "") @(r.IsHidden ? "hidden-row" : "")"
+                                title="@(isHeader ? "Başlık satırı" : r.IsHidden ? "Gizli satır" : outOfRange ? "Veri aralığı dışında" : null)">
+                                <td class="rn">@r.RowNumber</td>
+                                @foreach (var v in r.Values) { <td title="@v">@v</td> }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="hint" style="margin-top:6px">Vurgulu satır başlık satırıdır; soluk satırlar veri aralığı dışındadır.</div>
+        </div>
+    }
+}
+
+@code {
+    private async Task Select(SheetInfo sheet)
+    {
+        if (sheet.Name == State.Profile.SheetName)
+            return;
+        await State.SelectSheetAsync(sheet.Name);
+    }
+
+    private async Task SetInt(ChangeEventArgs e, Action<int?> set)
+    {
+        var text = e.Value?.ToString();
+        set(int.TryParse(text, out var v) && v > 0 ? v : null);
+        await State.ApplyReadOptionsAsync();
+    }
+
+    private async Task SetBool(ChangeEventArgs e, Action<bool> set)
+    {
+        set(e.Value is true || string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase));
+        await State.ApplyReadOptionsAsync();
+    }
+}

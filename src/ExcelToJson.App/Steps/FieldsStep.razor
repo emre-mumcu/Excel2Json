@@ -1,0 +1,175 @@
+@* 3. Adım: Sütun eşleştirme tablosu + ek alanlar (tek sıralı liste) *@
+@inherits StateComponent
+
+<h1 class="step-title">Alanlar</h1>
+<p class="step-desc">
+    Sütunları seçin, JSON alan adını (alias) ve veri tipini belirleyin. Alias'ta nokta notasyonu iç içe nesne üretir
+    (<span class="mono">address.city</span>). Satırları tutamaçtan sürükleyerek veya oklarla sıralayın; JSON alan sırası bu sırayı izler.
+</p>
+
+@if (!State.HasSheet)
+{
+    <div class="message-bar info">Önce bir dosya ve sayfa seçin.
+        <span class="grow"></span>
+        <FluentButton Appearance="Appearance.Accent" OnClick="() => State.GoTo(State.Workbook is null ? WizardStep.File : WizardStep.Sheet)">Seçime git</FluentButton>
+    </div>
+    return;
+}
+
+<div class="card">
+    <div class="toolbar">
+        <input class="x-input" style="width:220px" placeholder="🔍 Ara (ad, başlık, sütun)…" @bind="_filter" @bind:event="oninput" aria-label="Alanlarda ara" />
+        <span class="sep"></span>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="() => SetAll(true)" Title="Görünen tüm alanları seç">Tümünü seç</FluentButton>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="() => SetAll(false)" Title="Görünen tüm alanların seçimini kaldır">Hiçbirini</FluentButton>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Invert" Title="Seçimi ters çevir">Ters çevir</FluentButton>
+        <span class="sep"></span>
+        <div class="menu-anchor">
+            <FluentButton Appearance="Appearance.Accent" OnClick="() => _addMenu = !_addMenu"
+                          IconStart="@(new Icons.Regular.Size20.Add())" IconEnd="@(new Icons.Regular.Size16.ChevronDown())">Alan Ekle</FluentButton>
+            @if (_addMenu)
+            {
+                <div class="menu-backdrop" @onclick="() => _addMenu = false"></div>
+                <div class="menu" style="left:0; right:auto">
+                    @foreach (var (source, label) in Labels.Source)
+                    {
+                        <button @onclick="() => AddField(source)">@label</button>
+                    }
+                </div>
+            }
+        </div>
+        <span class="grow"></span>
+        <span class="muted nowrap">@State.Profile.IncludedFields.Count() / @State.Profile.Fields.Count alan seçili</span>
+    </div>
+
+    <div class="toolbar">
+        <div class="field">
+            <label>Adlandırma stili</label>
+            <EnumSelect TEnum="NamingStyle" Value="State.Profile.NamingStyle" Labels="Labels.NamingStyle" Small="true"
+                        ValueChanged="v => { State.Profile.NamingStyle = v; State.RegenerateAliases(); }" />
+        </div>
+        <label class="check-label" style="align-self:flex-end; padding-bottom:6px" title="ı→i, ş→s, ğ→g, ü→u, ö→o, ç→c">
+            <input type="checkbox" class="x-check" checked="@State.Profile.TransliterateTurkish"
+                   @onchange="e => { State.Profile.TransliterateTurkish = e.Value is true; State.RegenerateAliases(); }" />
+            Türkçe karakterleri dönüştür
+        </label>
+        <FluentButton Appearance="Appearance.Outline" Style="align-self:flex-end" OnClick="State.RegenerateAliases"
+                      Title="Tüm sütun alias'larını başlıklardan yeniden üret (elle yapılan değişiklikler kaybolur)"
+                      IconStart="@(new Icons.Regular.Size16.ArrowCounterclockwise())">Alias'ları yeniden üret</FluentButton>
+        <span class="grow"></span>
+        <div class="field">
+            <label>Dönüşüm hatası politikası</label>
+            <EnumSelect TEnum="ConversionErrorPolicy" Value="State.Profile.ErrorPolicy" Labels="Labels.ErrorPolicy" Small="true"
+                        ValueChanged="v => { State.Profile.ErrorPolicy = v; State.ProfileChanged(); }" />
+        </div>
+    </div>
+
+    @{
+        var general = State.Validation.Messages.Where(m => m.Area == ValidationArea.Fields && m.FieldId is null).ToList();
+    }
+    @foreach (var m in general)
+    {
+        <div class="message-bar @(m.Severity == ValidationSeverity.Error ? "error" : "warning")">@m.Message</div>
+    }
+
+    <div style="overflow-x:auto">
+        <table class="map">
+            <thead>
+                <tr>
+                    <th style="width:22px"></th>
+                    <th style="width:28px" title="Dahil et">✓</th>
+                    <th>Sütun</th>
+                    <th>Excel başlığı / kaynak</th>
+                    <th>Örnek değerler</th>
+                    <th style="min-width:180px">JSON alan adı</th>
+                    <th>Veri tipi</th>
+                    <th>Boş değer</th>
+                    <th title="Baştaki/sondaki boşlukları temizle">Trim</th>
+                    <th style="width:120px"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @{
+                    var fields = State.Profile.Fields;
+                    var visible = Filtered().ToList();
+                }
+                @foreach (var f in visible)
+                {
+                    var index = fields.IndexOf(f);
+                    <FieldRow @key="f.Id" Field="f" Index="index" Count="fields.Count"
+                              Column="ColumnFor(f)"
+                              IsDropTarget="_dropTargetId == f.Id && _dragging is not null && _dragging != f"
+                              OnDragStart="() => _dragging = f"
+                              OnDragEnter="() => _dropTargetId = f.Id"
+                              OnDrop="() => Drop(f)"
+                              OnDragEnd="EndDrag" />
+                }
+                @if (visible.Count == 0)
+                {
+                    <tr><td colspan="10" class="muted" style="padding:16px; text-align:center">Aramayla eşleşen alan yok.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="row end">
+    <FluentButton Appearance="Appearance.Accent" OnClick="() => State.GoTo(WizardStep.Output)"
+                  IconEnd="@(new Icons.Regular.Size16.ChevronRight())">Çıktı yapısına geç</FluentButton>
+</div>
+
+@code {
+    private string _filter = string.Empty;
+    private bool _addMenu;
+    private FieldDefinition? _dragging;
+    private string? _dropTargetId;
+
+    private IEnumerable<FieldDefinition> Filtered()
+    {
+        if (string.IsNullOrWhiteSpace(_filter))
+            return State.Profile.Fields;
+        var q = _filter.Trim();
+        return State.Profile.Fields.Where(f =>
+            f.Alias.Contains(q, StringComparison.CurrentCultureIgnoreCase) ||
+            (f is ColumnField c && (c.Header.Contains(q, StringComparison.CurrentCultureIgnoreCase) ||
+                                    c.ColumnLetter.Equals(q, StringComparison.OrdinalIgnoreCase))) ||
+            (f is CustomField cf && cf.DisplaySource.Contains(q, StringComparison.CurrentCultureIgnoreCase)));
+    }
+
+    private ColumnInfo? ColumnFor(FieldDefinition f) =>
+        f is ColumnField c ? State.Schema?.FindByIndex(c.ColumnIndex) : null;
+
+    private void SetAll(bool include)
+    {
+        foreach (var f in Filtered())
+            f.Include = include;
+        State.ProfileChanged();
+    }
+
+    private void Invert()
+    {
+        foreach (var f in Filtered())
+            f.Include = !f.Include;
+        State.ProfileChanged();
+    }
+
+    private void AddField(CustomFieldSource source)
+    {
+        _addMenu = false;
+        _filter = string.Empty;
+        State.AddCustomField(source);
+    }
+
+    private void Drop(FieldDefinition target)
+    {
+        if (_dragging is not null && _dragging != target)
+            State.MoveField(_dragging, State.Profile.Fields.IndexOf(target));
+        EndDrag();
+    }
+
+    private void EndDrag()
+    {
+        _dragging = null;
+        _dropTargetId = null;
+    }
+}

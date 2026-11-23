@@ -1,0 +1,16 @@
+@inject AppState State
+
+<div class="field">
+    <label>Tekrarlanan anahtar</label>
+    <EnumSelect TEnum="DuplicateKeyPolicy" Value="Options.DuplicateKeyPolicy" Labels="Labels.DuplicateKey" ValueChanged="OnChange" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public OutputOptions Options { get; set; } = default!;
+
+    private void OnChange(DuplicateKeyPolicy value)
+    {
+        Options.DuplicateKeyPolicy = value;
+        State.ProfileChanged();
+    }
+}

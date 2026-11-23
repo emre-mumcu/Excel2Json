@@ -1,0 +1,183 @@
+@* Eşleştirme tablosunda bir alan satırı (+ açılır ayrıntı satırı) *@
+@inject AppState State
+
+@{
+    var column = Field as ColumnField;
+    var custom = Field as CustomField;
+    var messages = State.Validation.ForField(Field.Id).ToList();
+    var hasError = messages.Any(m => m.Severity == ValidationSeverity.Error);
+    var highlight = State.HighlightFieldId == Field.Id;
+}
+
+<tr class="@(Field.Include ? "" : "excluded") @(custom is not null ? "custom" : "") @(highlight ? "highlight" : "") @(IsDropTarget ? "drop-target" : "")"
+    @ondragenter="OnDragEnter" @ondrop="OnDrop" @ondragover:preventDefault="true">
+    <td class="handle" draggable="true" title="Sürükleyerek taşı" @ondragstart="OnDragStart" @ondragend="OnDragEnd">
+        <FluentIcon Value="@(new Icons.Regular.Size16.ReOrderDotsVertical())" Color="Color.Neutral" />
+    </td>
+    <td>
+        <input type="checkbox" class="x-check" checked="@Field.Include" title="JSON'a dahil et"
+               @onchange="e => { Field.Include = e.Value is true; State.ProfileChanged(); }" />
+    </td>
+    <td class="dim">
+        @if (column is not null)
+        {
+            <span class="letter">@column.ColumnLetter</span>
+            @if (Column?.IsHidden == true) { <span class="tag warn" title="Gizli sütun">gizli</span> }
+        }
+        else
+        {
+            <span class="tag accent">ek alan</span>
+        }
+    </td>
+    <td class="dim ellipsis" style="max-width:200px" title="@(column?.Header ?? custom?.DisplaySource)">
+        @if (column is not null)
+        {
+            @column.Header
+            @if (Column is null) { <span class="tag warn" title="Sütun sayfada bulunamadı">yok</span> }
+        }
+        else
+        {
+            <span class="muted">@custom!.DisplaySource</span>
+        }
+    </td>
+    <td class="dim samples ellipsis" title="@SamplesTooltip">
+        @if (Column is not null)
+        {
+            @string.Join(" · ", Column.SampleValues)
+        }
+        else if (custom is not null)
+        {
+            <span class="mono">@CustomSummary(custom)</span>
+        }
+    </td>
+    <td>
+        <input class="x-input small alias @(hasError ? "invalid" : "")" value="@Field.Alias" @ref="_aliasInput"
+               @onchange="e => { Field.Alias = e.Value?.ToString()?.Trim() ?? string.Empty; State.ProfileChanged(); }"
+               aria-label="JSON alan adı" spellcheck="false" />
+    </td>
+    <td class="dim">
+        @if (column is not null || custom?.Source is CustomFieldSource.Constant or CustomFieldSource.Template)
+        {
+            <EnumSelect TEnum="DataType" Value="Field.Type" Labels="Labels.DataType" Small="true" Title="Veri tipi"
+                        ValueChanged="v => { Field.Type = v; if (v != DataType.Auto) _expanded = NeedsSettings(v) || _expanded; State.ProfileChanged(); }" />
+            @if (column is not null && Field.Type == DataType.Auto && Column is not null)
+            {
+                <div class="suggest">öneri: @Labels.DataType[Column.SuggestedType]</div>
+            }
+        }
+        else
+        {
+            <span class="muted">—</span>
+        }
+    </td>
+    <td class="dim">
+        @if (column is not null)
+        {
+            <EnumSelect TEnum="EmptyValuePolicy" Value="column.EmptyPolicy" Labels="Labels.EmptyPolicy" Small="true" Title="Boş değer politikası"
+                        ValueChanged="v => { column.EmptyPolicy = v; if (v == EmptyValuePolicy.DefaultValue) _expanded = true; State.ProfileChanged(); }" />
+        }
+        else
+        {
+            <span class="muted">—</span>
+        }
+    </td>
+    <td class="dim">
+        @if (column is not null)
+        {
+            <input type="checkbox" class="x-check" checked="@column.Trim" title="Baştaki/sondaki boşlukları temizle"
+                   @onchange="e => { column.Trim = e.Value is true; State.ProfileChanged(); }" />
+        }
+    </td>
+    <td class="nowrap">
+        <button class="icon-btn @(_expanded ? "on" : "")" title="Ayrıntılı ayarlar" @onclick="() => _expanded = !_expanded" aria-expanded="@_expanded">
+            <FluentIcon Value="@(new Icons.Regular.Size16.Wrench())" Color="Color.Neutral" />
+        </button>
+        <button class="icon-btn" title="Yukarı taşı" disabled="@(Index <= 0)" @onclick="() => State.MoveField(Field, Index - 1)">
+            <FluentIcon Value="@(new Icons.Regular.Size16.ArrowUp())" Color="Color.Neutral" />
+        </button>
+        <button class="icon-btn" title="Aşağı taşı" disabled="@(Index >= Count - 1)" @onclick="() => State.MoveField(Field, Index + 1)">
+            <FluentIcon Value="@(new Icons.Regular.Size16.ArrowDown())" Color="Color.Neutral" />
+        </button>
+        @if (custom is not null)
+        {
+            <button class="icon-btn danger" title="Ek alanı sil" @onclick="() => State.RemoveField(Field)">
+                <FluentIcon Value="@(new Icons.Regular.Size16.Delete())" Color="Color.Neutral" />
+            </button>
+        }
+    </td>
+</tr>
+
+@if (messages.Count > 0)
+{
+    <tr>
+        <td colspan="10" class="msgs">
+            @foreach (var m in messages)
+            {
+                <div class="@(m.Severity == ValidationSeverity.Error ? "text-error" : "text-warning")">
+                    @(m.Severity == ValidationSeverity.Error ? "✖" : "⚠") @m.Message
+                </div>
+            }
+        </td>
+    </tr>
+}
+
+@if (_expanded || (custom is not null && highlight))
+{
+    <tr class="details">
+        <td></td>
+        <td colspan="9">
+            @if (custom is not null)
+            {
+                <CustomFieldEditor Field="custom" />
+            }
+            @if (column is not null || custom?.Source is CustomFieldSource.Constant or CustomFieldSource.Template)
+            {
+                <TypeSettingsEditor Field="Field" />
+            }
+        </td>
+    </tr>
+}
+
+@code {
+    [Parameter, EditorRequired] public FieldDefinition Field { get; set; } = default!;
+    [Parameter] public int Index { get; set; }
+    [Parameter] public int Count { get; set; }
+    [Parameter] public ColumnInfo? Column { get; set; }
+    [Parameter] public bool IsDropTarget { get; set; }
+    [Parameter] public EventCallback OnDragStart { get; set; }
+    [Parameter] public EventCallback OnDragEnter { get; set; }
+    [Parameter] public EventCallback OnDrop { get; set; }
+    [Parameter] public EventCallback OnDragEnd { get; set; }
+
+    private bool _expanded;
+    private ElementReference _aliasInput;
+    private string? _focusedFor;
+
+    private string? SamplesTooltip => Column is null ? null : string.Join("\n", Column.SampleValues);
+
+    private static bool NeedsSettings(DataType t) => t is DataType.Date or DataType.DateTime or DataType.Boolean or DataType.Array or DataType.Decimal;
+
+    private static string CustomSummary(CustomField f) => f.Source switch
+    {
+        CustomFieldSource.Constant or CustomFieldSource.Template or CustomFieldSource.Json => f.Value ?? "",
+        CustomFieldSource.AutoIncrement => $"{f.Start}, {f.Start + f.Step}, {f.Start + 2 * f.Step}…",
+        CustomFieldSource.RowNumber => Labels.RowNumber[f.RowNumberMode],
+        CustomFieldSource.Timestamp => string.IsNullOrWhiteSpace(f.Format) ? "ISO 8601" : f.Format,
+        _ => ""
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Doğrulama/hata panelinden gelindiğinde ilgili alana odaklan (görünür alana kaydırır).
+        if (State.HighlightFieldId == Field.Id && _focusedFor != Field.Id)
+        {
+            _focusedFor = Field.Id;
+            _expanded = _expanded || Field is ColumnField { Type: not DataType.Auto };
+            try { await _aliasInput.FocusAsync(); } catch { /* öğe henüz yok */ }
+        }
+        else if (State.HighlightFieldId != Field.Id)
+        {
+            _focusedFor = null;
+        }
+    }
+}

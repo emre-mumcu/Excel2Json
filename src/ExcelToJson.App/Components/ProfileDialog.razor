@@ -1,0 +1,116 @@
+@* Profil kaydetme (ad sorma) ve yükleme (liste) diyaloğu *@
+@inject AppState State
+@inject INativeDialogService Dialogs
+
+<div class="overlay" role="dialog" aria-modal="true">
+    <div class="dialog wide">
+        <header>
+            <FluentIcon Value="@(Mode == ProfileDialogMode.Save ? (Icon)new Icons.Regular.Size24.Save() : new Icons.Regular.Size24.History())" Color="Color.Accent" />
+            @(Mode == ProfileDialogMode.Save ? "Profili kaydet" : "Profil yükle")
+        </header>
+        <div class="body">
+            @if (Mode == ProfileDialogMode.Save)
+            {
+                <div class="field" style="margin-bottom:12px">
+                    <label for="profile-name">Profil adı</label>
+                    <input id="profile-name" class="x-input" @bind="_name" @bind:event="oninput" placeholder="ör. Ürün listesi – ERP" autofocus
+                           @onkeydown="OnNameKeyDown" />
+                    <span class="hint">Profil; başlık ayarlarını, alanları, ek alanları, çıktı şeklini ve export ayarlarını içerir.
+                        Konum: <span class="mono">@AppPaths.ProfileDirectory</span></span>
+                </div>
+            }
+
+            @if (_profiles is null)
+            {
+                <FluentProgressRing />
+            }
+            else if (_profiles.Count == 0)
+            {
+                <p class="muted">Henüz kaydedilmiş profil yok.</p>
+            }
+            else
+            {
+                <div class="hint" style="margin-bottom:6px">@(Mode == ProfileDialogMode.Save ? "Mevcut bir profilin üzerine yazmak için seçin:" : "Kayıtlı profiller")</div>
+                <div class="list">
+                    @foreach (var p in _profiles)
+                    {
+                        var matches = State.Workbook is not null && string.Equals(p.SourceFileName, State.Workbook.FileName, StringComparison.OrdinalIgnoreCase);
+                        <div class="list-item" @onclick="() => Pick(p)">
+                            <FluentIcon Value="@(new Icons.Regular.Size20.DocumentBulletList())" Color="Color.Neutral" />
+                            <div>
+                                <div class="title">@p.Name @if (matches) { <span class="tag accent">bu dosya</span> }</div>
+                                <div class="sub">@(p.SourceFileName ?? "—") · @(p.SheetName ?? "—") · @p.UpdatedAt.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)</div>
+                            </div>
+                            @if (Mode == ProfileDialogMode.Load)
+                            {
+                                <button class="icon-btn danger" title="Sil" @onclick="() => Delete(p)" @onclick:stopPropagation="true">
+                                    <FluentIcon Value="@(new Icons.Regular.Size20.Delete())" Color="Color.Neutral" />
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        <footer>
+            <FluentButton Appearance="Appearance.Stealth" OnClick="OnClose">Vazgeç</FluentButton>
+            @if (Mode == ProfileDialogMode.Save)
+            {
+                <FluentButton Appearance="Appearance.Accent" Disabled="@string.IsNullOrWhiteSpace(_name)" OnClick="Save">Kaydet</FluentButton>
+            }
+        </footer>
+    </div>
+</div>
+
+@code {
+    [Parameter] public ProfileDialogMode Mode { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private IReadOnlyList<Core.Profiles.ProfileSummary>? _profiles;
+    private string _name = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _name = State.ActiveProfileName ?? $"{Path.GetFileNameWithoutExtension(State.Workbook?.FileName ?? "profil")} - {State.Profile.SheetName}";
+        _profiles = await State.ListProfilesAsync();
+    }
+
+    private async Task Pick(Core.Profiles.ProfileSummary p)
+    {
+        if (Mode == ProfileDialogMode.Save)
+        {
+            _name = p.Name;
+            return;
+        }
+        await OnClose.InvokeAsync();
+        await State.LoadProfileAsync(p.Name);
+    }
+
+    private async Task Delete(Core.Profiles.ProfileSummary p)
+    {
+        if (!await Dialogs.ConfirmAsync("Profili sil", $"\"{p.Name}\" profili kalıcı olarak silinsin mi?"))
+            return;
+        await State.DeleteProfileAsync(p.Name);
+        _profiles = await State.ListProfilesAsync();
+    }
+
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(_name))
+            return;
+        var exists = _profiles?.Any(p => string.Equals(p.Name, _name.Trim(), StringComparison.OrdinalIgnoreCase)) == true;
+        if (exists && _name.Trim() != State.ActiveProfileName &&
+            !await Dialogs.ConfirmAsync("Profil zaten var", $"\"{_name.Trim()}\" profilinin üzerine yazılsın mı?"))
+            return;
+        if (await State.SaveProfileAsync(_name))
+            await OnClose.InvokeAsync();
+    }
+
+    private async Task OnNameKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await Save();
+        else if (e.Key == "Escape")
+            await OnClose.InvokeAsync();
+    }
+}

@@ -1,0 +1,176 @@
+@* 5. Adım: Hedef klasör, dosya adı şablonu, format ayarları, doğrulama özeti ve Export *@
+@inherits StateComponent
+@inject ShellService Shell
+
+<h1 class="step-title">Export</h1>
+<p class="step-desc">JSON dosyasının kaydedileceği yeri ve biçimini seçin.</p>
+
+@if (!State.HasSheet)
+{
+    <div class="message-bar info">Önce bir dosya ve sayfa seçin.</div>
+    return;
+}
+
+@{
+    var f = State.Profile.Format;
+}
+
+<div class="card">
+    <h3><FluentIcon Value="@(new Icons.Regular.Size20.Folder())" Color="Color.Neutral" /> Hedef</h3>
+    <div class="row">
+        <div class="field grow">
+            <label>Klasör</label>
+            <div class="row" style="flex-wrap:nowrap">
+                <input class="x-input grow" readonly value="@(State.OutputFolder ?? "")" placeholder="Klasör seçilmedi" title="@State.OutputFolder" />
+                <FluentButton Appearance="Appearance.Outline" OnClick="State.PickOutputFolderAsync" IconStart="@(new Icons.Regular.Size16.FolderOpen())">Klasör Seç…</FluentButton>
+                @if (State.OutputFolder is { } folder)
+                {
+                    <button class="icon-btn" title="Klasörü aç" @onclick="() => Shell.OpenFolder(folder)">
+                        <FluentIcon Value="@(new Icons.Regular.Size16.Open())" Color="Color.Neutral" />
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="grid-2" style="margin-top:12px">
+        <div class="field">
+            <label>Dosya adı şablonu</label>
+            <input class="x-input mono" value="@f.FileNameTemplate" spellcheck="false"
+                   @onchange="e => Set(() => f.FileNameTemplate = e.Value?.ToString() ?? string.Empty)" />
+        </div>
+        <div class="field">
+            <label>Dosya zaten varsa</label>
+            <EnumSelect TEnum="ExistingFilePolicy" Value="f.ExistingFilePolicy" Labels="Labels.ExistingFile" ValueChanged="v => Set(() => f.ExistingFilePolicy = v)" />
+        </div>
+    </div>
+    <div class="hint" style="margin-top:6px">
+        Yer tutucular: <span class="mono">{file}</span> kaynak dosya adı, <span class="mono">{sheet}</span> sayfa, <span class="mono">{profile}</span>,
+        <span class="mono">{date}</span>, <span class="mono">{time}</span> ve tarih formatları (<span class="mono">{yyyyMMdd}</span>, <span class="mono">{yyyyMMdd_HHmmss}</span>…).
+        Geçersiz karakterler otomatik temizlenir.
+    </div>
+    <div style="margin-top:8px">Oluşacak dosya: <b class="mono">@State.ResolvedFileName</b></div>
+</div>
+
+<div class="card">
+    <h3><FluentIcon Value="@(new Icons.Regular.Size20.Code())" Color="Color.Neutral" /> Format</h3>
+    <div class="grid-2">
+        <label class="check-label">
+            <input type="checkbox" class="x-check" checked="@f.Indented" @onchange="e => Set(() => f.Indented = e.Value is true)" />
+            Girintili (okunabilir) — kapalıysa minified
+        </label>
+        <div class="field">
+            <label>Girinti boyutu</label>
+            <input type="number" class="x-input" min="1" max="8" value="@f.IndentSize" disabled="@(!f.Indented)"
+                   @onchange="e => Set(() => f.IndentSize = int.TryParse(e.Value?.ToString(), out var n) ? Math.Clamp(n, 1, 8) : 2)" />
+        </div>
+        <label class="check-label" title="Kapalıysa ı, ş, ğ… ı biçiminde kaçışlanır">
+            <input type="checkbox" class="x-check" checked="@f.UnescapedUnicode" @onchange="e => Set(() => f.UnescapedUnicode = e.Value is true)" />
+            Türkçe karakterleri kaçışsız yaz
+        </label>
+        <div class="field">
+            <label>Kodlama</label>
+            <select class="x-select" value="@(f.WriteBom ? "bom" : "nobom")" @onchange="e => Set(() => f.WriteBom = IsBom(e))">
+                <option value="nobom">UTF-8 (BOM'suz)</option>
+                <option value="bom">UTF-8 (BOM'lu)</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>
+        <FluentIcon Value="@(new Icons.Regular.Size20.CheckmarkCircle())" Color="Color.Neutral" /> Son kontrol
+        <span class="grow"></span>
+        @if (State.Validation.IsValid)
+        {
+            <span class="text-success" style="font-weight:400; font-size:13px">Export'a hazır</span>
+        }
+    </h3>
+    @if (State.Validation.Messages.Count == 0)
+    {
+        <p class="text-success">✓ Sorun bulunamadı.</p>
+    }
+    else
+    {
+        <ul class="validation-list">
+            @foreach (var m in State.Validation.Messages.OrderByDescending(m => m.Severity))
+            {
+                <li>
+                    <span class="@(m.Severity == ValidationSeverity.Error ? "text-error" : "text-warning")">@(m.Severity == ValidationSeverity.Error ? "✖" : "⚠")</span>
+                    <span>@m.Message</span>
+                    <button class="link-btn nowrap" @onclick="() => Go(m)">@AreaLabel(m.Area) →</button>
+                </li>
+            }
+        </ul>
+    }
+
+    @if (State.PreviewResult is { } r)
+    {
+        <div class="hint" style="margin-top:10px">
+            @r.TotalRows.ToString("N0") kayıt export edilecek · @r.SkippedEmptyRows boş satır atlanacak
+            @if (r.IssueCount > 0)
+            {
+                <span class="text-warning"> · önizlemede @r.IssueCount dönüşüm uyarısı (@Labels.ErrorPolicy[State.Profile.ErrorPolicy])</span>
+            }
+        </div>
+    }
+
+    <div class="row end" style="margin-top:16px">
+        <FluentButton Appearance="Appearance.Accent" OnClick="State.ExportAsync" Disabled="@(State.Busy is not null)"
+                      IconStart="@(new Icons.Regular.Size20.ArrowExport())" Title="Export (Ctrl+E)">Export</FluentButton>
+    </div>
+</div>
+
+@if (State.LastExport is { FilePath: { } path } last)
+{
+    <div class="message-bar success">
+        <FluentIcon Value="@(new Icons.Regular.Size20.CheckmarkCircle())" CustomColor="var(--x-success)" Color="Color.Custom" />
+        <div class="grow">
+            <b>Son export:</b> <span class="mono">@Path.GetFileName(path)</span>
+            <div class="hint">@last.Run.RecordCount.ToString("N0") kayıt · @AppState.FormatSize(last.FileSize) · @last.Duration.TotalSeconds.ToString("0.0") sn</div>
+        </div>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="() => Shell.OpenFolder(path)">Klasörü aç</FluentButton>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="() => Shell.OpenFile(path)">Dosyayı aç</FluentButton>
+    </div>
+}
+
+@if (State.Workbook is { } wb && wb.Sheets.Count(s => !s.IsEmpty) > 1)
+{
+    <MultiSheetExportCard />
+}
+
+@code {
+    private void Set(Action change)
+    {
+        change();
+        State.ProfileChanged();
+    }
+
+    private static bool IsBom(ChangeEventArgs e) => e.Value?.ToString() == "bom";
+
+    private static string AreaLabel(ValidationArea area) => area switch
+    {
+        ValidationArea.File => "Dosya",
+        ValidationArea.Sheet => "Sayfa",
+        ValidationArea.Fields => "Alanlar",
+        ValidationArea.Output => "Çıktı",
+        _ => "Export"
+    };
+
+    private void Go(ValidationMessage m)
+    {
+        if (m.FieldId is not null)
+        {
+            State.FocusField(m.FieldId);
+            return;
+        }
+        State.GoTo(m.Area switch
+        {
+            ValidationArea.File => WizardStep.File,
+            ValidationArea.Sheet => WizardStep.Sheet,
+            ValidationArea.Fields => WizardStep.Fields,
+            ValidationArea.Output => WizardStep.Output,
+            _ => WizardStep.Export
+        });
+    }
+}

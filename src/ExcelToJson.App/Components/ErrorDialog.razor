@@ -1,0 +1,42 @@
+@* Beklenmeyen hatalar: teknik olmayan Türkçe mesaj + açılır "Detaylar" bölümü *@
+@inherits StateComponent
+@inject ShellService Shell
+
+@if (State.Error is { } error)
+{
+    <div class="overlay" role="alertdialog" aria-modal="true">
+        <div class="dialog">
+            <header>
+                <FluentIcon Value="@(new Icons.Regular.Size24.ErrorCircle())" CustomColor="var(--x-error)" Color="Color.Custom" />
+                @error.Title
+            </header>
+            <div class="body">
+                <p>@error.Message</p>
+                @if (!string.IsNullOrEmpty(error.Details))
+                {
+                    <button class="link-btn" @onclick="() => _showDetails = !_showDetails">
+                        @(_showDetails ? "Detayları gizle" : "Detaylar")
+                    </button>
+                    @if (_showDetails)
+                    {
+                        <pre class="details">@error.Details</pre>
+                    }
+                }
+            </div>
+            <footer>
+                <FluentButton Appearance="Appearance.Stealth" OnClick="() => Shell.OpenFolder(AppPaths.LogDirectory)">Günlük klasörünü aç</FluentButton>
+                <FluentButton Appearance="Appearance.Accent" OnClick="Close" Autofocus="true">Kapat</FluentButton>
+            </footer>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _showDetails;
+
+    private void Close()
+    {
+        _showDetails = false;
+        State.DismissError();
+    }
+}

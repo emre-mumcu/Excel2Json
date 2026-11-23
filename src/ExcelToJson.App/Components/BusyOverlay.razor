@@ -1,0 +1,28 @@
+@* Uzun işlemlerde ilerleme göstergesi ve iptal düğmesi *@
+@inherits StateComponent
+
+@if (State.Busy is { } busy)
+{
+    <div class="overlay" role="dialog" aria-modal="true" aria-label="@busy.Message">
+        <div class="dialog busy-card">
+            @if (busy.Progress is { } p)
+            {
+                <div class="msg">@busy.Message</div>
+                <div class="progress-wrap">
+                    <FluentProgress Min="0" Max="100" Value="@((int)Math.Round(p * 100))" Width="100%" />
+                </div>
+                <div class="muted">%@((int)Math.Round(p * 100)) @(busy.Detail is null ? "" : "· " + busy.Detail)</div>
+            }
+            else
+            {
+                <FluentProgressRing />
+                <div class="msg">@busy.Message</div>
+            }
+            @if (busy.Cancellable)
+            {
+                <FluentButton Appearance="Appearance.Outline" OnClick="State.CancelBusy"
+                              IconStart="@(new Icons.Regular.Size20.Dismiss())">İptal</FluentButton>
+            }
+        </div>
+    </div>
+}

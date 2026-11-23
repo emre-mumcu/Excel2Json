@@ -1,0 +1,60 @@
+@implements IDisposable
+@inject NotificationService Notify
+
+<div class="toast-host" role="status" aria-live="polite">
+    @foreach (var t in Notify.Toasts)
+    {
+        <div class="toast @t.Kind.ToString().ToLowerInvariant()" @key="t.Id">
+            <span>
+                @switch (t.Kind)
+                {
+                    case ToastKind.Success:
+                        <FluentIcon Value="@(new Icons.Regular.Size20.CheckmarkCircle())" CustomColor="var(--x-success)" Color="Color.Custom" />
+                        break;
+                    case ToastKind.Error:
+                        <FluentIcon Value="@(new Icons.Regular.Size20.ErrorCircle())" CustomColor="var(--x-error)" Color="Color.Custom" />
+                        break;
+                    case ToastKind.Warning:
+                        <FluentIcon Value="@(new Icons.Regular.Size20.Warning())" CustomColor="var(--x-warning)" Color="Color.Custom" />
+                        break;
+                    default:
+                        <FluentIcon Value="@(new Icons.Regular.Size20.Info())" CustomColor="var(--x-info)" Color="Color.Custom" />
+                        break;
+                }
+            </span>
+            <div>
+                <div class="t-title">@t.Title</div>
+                @if (!string.IsNullOrEmpty(t.Message))
+                {
+                    <div class="t-msg">@t.Message</div>
+                }
+                @if (t.Actions.Count > 0)
+                {
+                    <div class="t-actions">
+                        @foreach (var a in t.Actions)
+                        {
+                            <button class="link-btn" @onclick="() => Run(t, a)">@a.Label</button>
+                        }
+                    </div>
+                }
+            </div>
+            <button class="icon-btn" title="Kapat" @onclick="() => Notify.Dismiss(t.Id)">
+                <FluentIcon Value="@(new Icons.Regular.Size16.Dismiss())" Color="Color.Neutral" />
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized() => Notify.Changed += OnChanged;
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    private void Run(Toast toast, ToastAction action)
+    {
+        action.Callback();
+        Notify.Dismiss(toast.Id);
+    }
+
+    public void Dispose() => Notify.Changed -= OnChanged;
+}

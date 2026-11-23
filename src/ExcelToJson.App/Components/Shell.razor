@@ -1,0 +1,227 @@
+@* Uygulama kabuğu: üst çubuk, sol adım navigasyonu, içerik ve canlı önizleme paneli *@
+@implements IDisposable
+@inject AppState State
+@inject ThemeService Theme
+@inject FileDropBridge Bridge
+@inject NotificationService Notify
+@inject SettingsService Settings
+
+<div class="app-shell @(Theme.IsDark ? "dark" : "light")">
+    <header class="app-header">
+        <div class="brand">
+            <FluentIcon Value="@(new Icons.Regular.Size24.DocumentTable())" Color="Color.Accent" />
+            <span>Excel → JSON</span>
+        </div>
+
+        <div class="context">
+            @if (State.Workbook is { } wb)
+            {
+                <span class="chip" title="@wb.FilePath">
+                    <FluentIcon Value="@(new Icons.Regular.Size16.Document())" Color="Color.Neutral" /> @wb.FileName
+                </span>
+                @if (State.Profile.SheetName is { } sheet)
+                {
+                    <span class="chip" title="Seçili sayfa">
+                        <FluentIcon Value="@(new Icons.Regular.Size16.Table())" Color="Color.Neutral" /> @sheet
+                    </span>
+                }
+                @if (State.ActiveProfileName is { } p)
+                {
+                    <span class="chip accent" title="Etkin profil">@p</span>
+                }
+            }
+        </div>
+
+        <div class="spacer"></div>
+
+        <div class="actions">
+            <FluentButton Appearance="Appearance.Stealth" Title="Dosya aç (Ctrl+O)" OnClick="State.PickAndOpenFileAsync"
+                          IconStart="@(new Icons.Regular.Size20.FolderOpen())">Aç</FluentButton>
+            <FluentButton Appearance="Appearance.Stealth" Title="Dosyayı yenile (F5)" Disabled="@(State.Workbook is null)"
+                          OnClick="State.RefreshAsync" IconStart="@(new Icons.Regular.Size20.ArrowSync())">Yenile</FluentButton>
+
+            <div class="menu-anchor">
+                <FluentButton Appearance="Appearance.Stealth" OnClick="() => _profileMenuOpen = !_profileMenuOpen"
+                              IconStart="@(new Icons.Regular.Size20.Save())" IconEnd="@(new Icons.Regular.Size16.ChevronDown())">Profil</FluentButton>
+                @if (_profileMenuOpen)
+                {
+                    <div class="menu-backdrop" @onclick="() => _profileMenuOpen = false"></div>
+                    <div class="menu" role="menu">
+                        <button disabled="@(!State.HasSheet)" @onclick="SaveProfile">
+                            <FluentIcon Value="@(new Icons.Regular.Size20.Save())" Color="Color.Neutral" /> Profili kaydet <kbd class="kbd">Ctrl+S</kbd>
+                        </button>
+                        <button disabled="@(!State.HasSheet)" @onclick="SaveProfileAs">
+                            <FluentIcon Value="@(new Icons.Regular.Size20.DocumentAdd())" Color="Color.Neutral" /> Farklı kaydet…
+                        </button>
+                        <button @onclick="OpenLoadDialog">
+                            <FluentIcon Value="@(new Icons.Regular.Size20.History())" Color="Color.Neutral" /> Profil yükle…
+                        </button>
+                        <div class="sep"></div>
+                        <button disabled="@(State.Workbook is null)" @onclick="ImportProfile">
+                            <FluentIcon Value="@(new Icons.Regular.Size20.ArrowDownload())" Color="Color.Neutral" /> İçe aktar (dosyadan)…
+                        </button>
+                        <button disabled="@(!State.HasSheet)" @onclick="ExportProfile">
+                            <FluentIcon Value="@(new Icons.Regular.Size20.ArrowUpload())" Color="Color.Neutral" /> Dışa aktar (paylaşım için)…
+                        </button>
+                    </div>
+                }
+            </div>
+
+            <select class="x-select small" title="Tema" value="@Theme.Mode" @onchange="OnThemeChange" aria-label="Tema">
+                <option value="@ThemeMode.System">Tema: Sistem</option>
+                <option value="@ThemeMode.Light">Tema: Açık</option>
+                <option value="@ThemeMode.Dark">Tema: Koyu</option>
+            </select>
+
+            <FluentButton Appearance="Appearance.Stealth" Title="Uygulama ayarları" OnClick="() => _settingsOpen = true"
+                          IconStart="@(new Icons.Regular.Size20.Settings())" />
+        </div>
+    </header>
+
+    <div class="app-body">
+        <StepNav />
+
+        <div class="workspace @(ShowPreview ? "with-preview" : "") @(ShowPreview && !Settings.Current.PreviewPanelOpen ? "collapsed" : "")">
+            <section class="step-content">
+                @switch (State.CurrentStep)
+                {
+                    case WizardStep.File:
+                        <FileStep />
+                        break;
+                    case WizardStep.Sheet:
+                        <SheetStep />
+                        break;
+                    case WizardStep.Fields:
+                        <FieldsStep />
+                        break;
+                    case WizardStep.Output:
+                        <OutputStep />
+                        break;
+                    case WizardStep.Export:
+                        <ExportStep />
+                        break;
+                }
+            </section>
+
+            @if (ShowPreview)
+            {
+                <JsonPreviewPanel />
+            }
+        </div>
+    </div>
+
+    <ToastHost />
+    <BusyOverlay />
+    <ErrorDialog />
+
+    @if (_profileDialog is not null)
+    {
+        <ProfileDialog Mode="_profileDialog.Value" OnClose="() => _profileDialog = null" />
+    }
+    @if (_settingsOpen)
+    {
+        <SettingsDialog OnClose="() => _settingsOpen = false" />
+    }
+</div>
+
+@code {
+    private bool _profileMenuOpen;
+    private bool _settingsOpen;
+    private ProfileDialogMode? _profileDialog;
+
+    private bool ShowPreview => State.HasSheet && State.CurrentStep is WizardStep.Fields or WizardStep.Output or WizardStep.Export;
+
+    protected override void OnInitialized()
+    {
+        State.Changed += OnChanged;
+        Settings.Changed += OnChanged;
+        State.SaveProfileRequested += OnSaveProfileRequested;
+        Bridge.FilesDropped += OnFilesDropped;
+        Bridge.ShortcutPressed += OnShortcut;
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnSaveProfileRequested() => InvokeAsync(() =>
+    {
+        _profileDialog = ProfileDialogMode.Save;
+        StateHasChanged();
+    });
+
+    private void OnFilesDropped(IReadOnlyList<string> paths) => InvokeAsync(async () =>
+    {
+        var path = paths.FirstOrDefault(p => p.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)
+                                          || p.EndsWith(".xlsm", StringComparison.OrdinalIgnoreCase)
+                                          || p.EndsWith(".xls", StringComparison.OrdinalIgnoreCase))
+                   ?? paths[0];
+        if (paths.Count > 1)
+            Notify.Info("Yalnızca bir dosya açılabilir", Path.GetFileName(path) + " açılıyor.");
+        await State.OpenFileAsync(path);
+    });
+
+    private void OnShortcut(string key) => InvokeAsync(async () =>
+    {
+        if (State.Busy is not null || _profileDialog is not null || _settingsOpen)
+            return;
+        switch (key)
+        {
+            case "ctrl+o":
+                await State.PickAndOpenFileAsync();
+                break;
+            case "ctrl+s":
+                State.RequestSaveProfile();
+                break;
+            case "ctrl+e":
+                await State.ExportAsync();
+                break;
+            case "f5":
+                await State.RefreshAsync();
+                break;
+        }
+    });
+
+    private void SaveProfile()
+    {
+        _profileMenuOpen = false;
+        State.RequestSaveProfile();
+    }
+
+    private void SaveProfileAs()
+    {
+        _profileMenuOpen = false;
+        _profileDialog = ProfileDialogMode.Save;
+    }
+
+    private void OpenLoadDialog()
+    {
+        _profileMenuOpen = false;
+        _profileDialog = ProfileDialogMode.Load;
+    }
+
+    private async Task ImportProfile()
+    {
+        _profileMenuOpen = false;
+        await State.ImportProfileAsync();
+    }
+
+    private async Task ExportProfile()
+    {
+        _profileMenuOpen = false;
+        await State.ExportProfileAsync();
+    }
+
+    private void OnThemeChange(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<ThemeMode>(e.Value?.ToString(), out var mode))
+            Theme.SetMode(mode);
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnChanged;
+        Settings.Changed -= OnChanged;
+        State.SaveProfileRequested -= OnSaveProfileRequested;
+        Bridge.FilesDropped -= OnFilesDropped;
+        Bridge.ShortcutPressed -= OnShortcut;
+    }
+}

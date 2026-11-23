@@ -1,0 +1,32 @@
+@* Profildeki dahil edilmiş alanlardan birini seçer (anahtar, değer, gruplama alanı) *@
+@inject AppState State
+
+<select class="x-select" value="@(Value ?? "")" @onchange="OnChange" aria-label="@Placeholder">
+    <option value="">@Placeholder</option>
+    @if (AllowRowNumber)
+    {
+        <option value="@OutputShapes.RowNumberKey">⟨Excel satır numarası⟩</option>
+    }
+    @foreach (var f in State.Profile.IncludedFields)
+    {
+        <option value="@f.Id">@f.Alias @(f is ColumnField c ? $"({c.ColumnLetter})" : "(ek alan)")</option>
+    }
+    @if (Value is not null && Value != OutputShapes.RowNumberKey && State.Profile.FindField(Value) is { Include: false } excluded)
+    {
+        <option value="@excluded.Id">@excluded.Alias (dahil değil!)</option>
+    }
+</select>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public bool AllowRowNumber { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "— Alan seçin —";
+
+    private async Task OnChange(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        Value = string.IsNullOrEmpty(v) ? null : v;
+        await ValueChanged.InvokeAsync(Value);
+    }
+}

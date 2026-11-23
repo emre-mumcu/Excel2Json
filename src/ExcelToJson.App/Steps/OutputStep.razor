@@ -1,0 +1,220 @@
+@* 4. Adım: Çıktı şekli (strateji kartları + örnek), şekle özgü ayarlar ve kök sarmalayıcı *@
+@inherits StateComponent
+@inject ExcelToJson.Core.Json.Shapes.OutputShapeRegistry Shapes
+
+<h1 class="step-title">Çıktı</h1>
+<p class="step-desc">JSON çıktısının yapısını seçin. Sağdaki önizleme seçiminize göre anında güncellenir.</p>
+
+@if (!State.HasSheet)
+{
+    <div class="message-bar info">Önce bir dosya ve sayfa seçin.</div>
+    return;
+}
+
+@{
+    var o = State.Profile.Output;
+    var w = o.Wrapper;
+}
+
+<div class="shape-grid" role="radiogroup" aria-label="Çıktı şekli">
+    @foreach (var shape in Shapes.All)
+    {
+        var selected = shape.Id == o.Shape;
+        <button class="shape-card @(selected ? "selected" : "")" role="radio" aria-checked="@selected" @onclick="() => SelectShape(shape.Id)">
+            <span class="name">@shape.DisplayName</span>
+            <span class="desc">@shape.Description</span>
+            <pre>@shape.Example</pre>
+        </button>
+    }
+</div>
+
+@{
+    var outputMessages = State.Validation.Messages.Where(m => m.Area == ValidationArea.Output).ToList();
+}
+@foreach (var m in outputMessages)
+{
+    <div class="message-bar @(m.Severity == ValidationSeverity.Error ? "error" : "warning")">@m.Message</div>
+}
+
+@if (HasShapeSettings(o.Shape))
+{
+    <div class="card">
+        <h3><FluentIcon Value="@(new Icons.Regular.Size20.Settings())" Color="Color.Neutral" /> @Shapes.Get(o.Shape).DisplayName ayarları</h3>
+        <div class="grid-2">
+            @switch (o.Shape)
+            {
+                case OutputShapes.KeyedObject:
+                    <div class="field">
+                        <label>Anahtar alanı</label>
+                        <FieldSelect Value="@o.KeyFieldId" ValueChanged="v => Set(() => o.KeyFieldId = v)" AllowRowNumber="true" />
+                    </div>
+                    <DuplicatePolicy Options="o" />
+                    <label class="check-label">
+                        <input type="checkbox" class="x-check" checked="@o.KeepKeyInObject" @onchange="e => Set(() => o.KeepKeyInObject = e.Value is true)" />
+                        Anahtar alanı nesnenin içinde de kalsın
+                    </label>
+                    break;
+
+                case OutputShapes.SingleObject:
+                    <div class="field">
+                        <label>Excel satır numarası (boş = ilk kayıt)</label>
+                        <input type="number" class="x-input" min="1" value="@(o.SingleRowNumber?.ToString() ?? "")" placeholder="ilk kayıt"
+                               @onchange="e => Set(() => o.SingleRowNumber = int.TryParse(e.Value?.ToString(), out var n) ? n : null)" />
+                    </div>
+                    break;
+
+                case OutputShapes.KeyValue:
+                    <div class="field">
+                        <label>Anahtar sütunu</label>
+                        <FieldSelect Value="@o.KeyFieldId" ValueChanged="v => Set(() => o.KeyFieldId = v)" AllowRowNumber="true" />
+                    </div>
+                    <div class="field">
+                        <label>Değer sütunu</label>
+                        <FieldSelect Value="@o.ValueFieldId" ValueChanged="v => Set(() => o.ValueFieldId = v)" />
+                    </div>
+                    <DuplicatePolicy Options="o" />
+                    break;
+
+                case OutputShapes.ArrayOfValues:
+                    <div class="field">
+                        <label>Değer sütunu</label>
+                        <FieldSelect Value="@o.ValueFieldId" ValueChanged="v => Set(() => o.ValueFieldId = v)" />
+                    </div>
+                    break;
+
+                case OutputShapes.ArrayOfArrays:
+                    <label class="check-label">
+                        <input type="checkbox" class="x-check" checked="@o.IncludeHeaderRow" @onchange="e => Set(() => o.IncludeHeaderRow = e.Value is true)" />
+                        İlk eleman başlık dizisi olsun (alan adları)
+                    </label>
+                    break;
+
+                case OutputShapes.Grouped:
+                    <div class="field">
+                        <label>Gruplama alanı</label>
+                        <FieldSelect Value="@o.GroupFieldId" ValueChanged="v => Set(() => o.GroupFieldId = v)" />
+                    </div>
+                    <div class="field">
+                        <label>Yapı</label>
+                        <EnumSelect TEnum="GroupedVariant" Value="o.GroupedVariant" Labels="Labels.Grouped" ValueChanged="v => Set(() => o.GroupedVariant = v)" />
+                    </div>
+                    @if (o.GroupedVariant == GroupedVariant.ArrayOfGroups)
+                    {
+                        <div class="field">
+                            <label>Alt kayıt dizisinin adı</label>
+                            <input class="x-input" value="@o.ChildrenName" @onchange="e => Set(() => o.ChildrenName = e.Value?.ToString()?.Trim() ?? string.Empty)" />
+                        </div>
+                    }
+                    <label class="check-label">
+                        <input type="checkbox" class="x-check" checked="@o.KeepGroupFieldInItems" @onchange="e => Set(() => o.KeepGroupFieldInItems = e.Value is true)" />
+                        Gruplama alanı alt kayıtlarda da kalsın
+                    </label>
+                    break;
+            }
+        </div>
+    </div>
+}
+
+<div class="card">
+    <h3>
+        <FluentIcon Value="@(new Icons.Regular.Size20.Braces())" Color="Color.Neutral" /> Kök sarmalayıcı (wrapper)
+        <span class="grow"></span>
+        <FluentSwitch Value="@w.Enabled" ValueChanged="v => Set(() => w.Enabled = v)" Label="@(w.Enabled ? "Açık" : "Kapalı")" />
+    </h3>
+    <p class="hint" style="margin-top:-6px">Çıktıyı <span class="mono">{ "meta": {…}, "data": … }</span> şeklinde sarar. Tüm şekillerle birlikte kullanılabilir.</p>
+
+    @if (w.Enabled)
+    {
+        <div class="grid-2">
+            <div class="field">
+                <label>Veri özelliğinin adı</label>
+                <input class="x-input mono" value="@w.DataPropertyName" @onchange="e => Set(() => w.DataPropertyName = e.Value?.ToString()?.Trim() ?? string.Empty)" />
+            </div>
+            <label class="check-label">
+                <input type="checkbox" class="x-check" checked="@w.IncludeMeta" @onchange="e => Set(() => w.IncludeMeta = e.Value is true)" />
+                Meta bloğu (source, sheet, exportedAt, count)
+            </label>
+            @if (w.IncludeMeta)
+            {
+                <div class="field">
+                    <label>Meta özelliğinin adı</label>
+                    <input class="x-input mono" value="@w.MetaPropertyName" @onchange="e => Set(() => w.MetaPropertyName = e.Value?.ToString()?.Trim() ?? string.Empty)" />
+                </div>
+            }
+        </div>
+
+        <h3 style="margin-top:18px">
+            Kök seviye ek alanlar
+            <span class="hint" style="font-weight:400">— @(w.IncludeMeta ? "meta bloğuna" : "köke") bir kez eklenir</span>
+            <span class="grow"></span>
+            <FluentButton Appearance="Appearance.Outline" OnClick="AddRootField" IconStart="@(new Icons.Regular.Size16.Add())">Kök alan ekle</FluentButton>
+        </h3>
+        @foreach (var f in w.RootFields)
+        {
+            var highlight = State.HighlightFieldId == f.Id;
+            <div class="root-field" style="@(highlight ? "border-color: var(--x-warning)" : "")" @key="f.Id">
+                <div class="row" style="margin-bottom:8px">
+                    <input type="checkbox" class="x-check" checked="@f.Include" title="Dahil et" @onchange="e => Set(() => f.Include = e.Value is true)" />
+                    <input class="x-input mono" style="width:240px" value="@f.Alias" placeholder="alan adı" aria-label="Kök alan adı"
+                           @onchange="e => Set(() => f.Alias = e.Value?.ToString()?.Trim() ?? string.Empty)" />
+                    <span class="grow"></span>
+                    <button class="icon-btn danger" title="Sil" @onclick="() => Set(() => w.RootFields.Remove(f))">
+                        <FluentIcon Value="@(new Icons.Regular.Size16.Delete())" Color="Color.Neutral" />
+                    </button>
+                </div>
+                <CustomFieldEditor Field="f" IsRoot="true" />
+                @foreach (var m in State.Validation.ForField(f.Id))
+                {
+                    <div class="@(m.Severity == ValidationSeverity.Error ? "text-error" : "text-warning")" style="font-size:12px">@m.Message</div>
+                }
+            </div>
+        }
+        @if (w.RootFields.Count == 0)
+        {
+            <p class="muted">Kök alan yok. Örn: <span class="mono">"version": 2</span>, <span class="mono">"generatedBy": "ERP"</span>.</p>
+        }
+    }
+</div>
+
+<div class="row end">
+    <FluentButton Appearance="Appearance.Accent" OnClick="() => State.GoTo(WizardStep.Export)"
+                  IconEnd="@(new Icons.Regular.Size16.ChevronRight())">Export adımına geç</FluentButton>
+</div>
+
+@code {
+    private static bool HasShapeSettings(string shape) => shape != OutputShapes.ArrayOfObjects;
+
+    private void SelectShape(string id)
+    {
+        var o = State.Profile.Output;
+        o.Shape = id;
+        // Makul varsayılanlar: anahtar/değer/grup alanı seçilmemişse ilk uygun alanları öner.
+        var included = State.Profile.IncludedFields.ToList();
+        if (id is OutputShapes.KeyedObject or OutputShapes.KeyValue && o.KeyFieldId is null && included.Count > 0)
+            o.KeyFieldId = included[0].Id;
+        if (id is OutputShapes.KeyValue && o.ValueFieldId is null && included.Count > 1)
+            o.ValueFieldId = included[1].Id;
+        if (id is OutputShapes.ArrayOfValues && o.ValueFieldId is null && included.Count > 0)
+            o.ValueFieldId = included[0].Id;
+        if (id is OutputShapes.Grouped && o.GroupFieldId is null && included.Count > 0)
+            o.GroupFieldId = included[0].Id;
+        State.ProfileChanged();
+    }
+
+    private void Set(Action change)
+    {
+        change();
+        State.ProfileChanged();
+    }
+
+    private void AddRootField()
+    {
+        var w = State.Profile.Output.Wrapper;
+        var name = "field";
+        var n = 1;
+        while (w.RootFields.Any(f => f.Alias == name))
+            name = "field" + ++n;
+        w.RootFields.Add(new CustomField { Alias = name, Source = CustomFieldSource.Constant });
+        State.ProfileChanged();
+    }
+}

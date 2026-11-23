@@ -1,0 +1,126 @@
+@* Tipe özgü dönüşüm ayarları (tarih formatı, kültür, boolean değerleri, dizi ayracı) ve varsayılan değer *@
+@inject AppState State
+
+@{
+    var s = Field.TypeSettings;
+    var column = Field as ColumnField;
+}
+
+<div class="custom-editor" style="margin-top:4px">
+    @switch (Field.Type)
+    {
+        case DataType.Date:
+        case DataType.DateTime:
+            <div class="field">
+                <label>Çıktı formatı</label>
+                <input class="x-input" value="@s.DateFormat" placeholder="@(Field.Type == DataType.Date ? "yyyy-MM-dd (ISO 8601)" : "yyyy-MM-ddTHH:mm:ss (ISO 8601)")"
+                       @onchange="e => Set(() => s.DateFormat = Clean(e))" title="Boş bırakılırsa ISO 8601. Örn: dd.MM.yyyy, yyyy-MM-dd'T'HH:mm:ss'Z'" />
+            </div>
+            <div class="field">
+                <label>Metin tarih giriş formatı (opsiyonel)</label>
+                <input class="x-input" value="@s.DateInputFormat" placeholder="ör. dd.MM.yyyy"
+                       @onchange="e => Set(() => s.DateInputFormat = Clean(e))" />
+            </div>
+            <CultureSelect Settings="s" />
+            <div class="field wide hint">Excel'de tarih olarak (veya seri numarası olarak) saklanan değerler doğrudan dönüştürülür; metin tarihler seçilen kültürle okunur.</div>
+            break;
+
+        case DataType.Integer:
+        case DataType.Decimal:
+            <CultureSelect Settings="s" />
+            <div class="field hint">Metin olarak girilmiş sayılar bu kültürle okunur. JSON çıktısı her zaman <span class="mono">1234.56</span> biçimindedir.</div>
+            break;
+
+        case DataType.Boolean:
+            <div class="field">
+                <label>True kabul edilen değerler</label>
+                <input class="x-input" value="@s.TrueValues" @onchange="e => Set(() => s.TrueValues = e.Value?.ToString() ?? string.Empty)" />
+            </div>
+            <div class="field">
+                <label>False kabul edilen değerler</label>
+                <input class="x-input" value="@s.FalseValues" @onchange="e => Set(() => s.FalseValues = e.Value?.ToString() ?? string.Empty)" />
+            </div>
+            <label class="check-label" title="ör. 'x / boş' kullanımı">
+                <input type="checkbox" class="x-check" checked="@s.EmptyIsFalse" @onchange="e => Set(() => s.EmptyIsFalse = e.Value is true)" />
+                Boş hücre = false
+            </label>
+            <div class="field wide hint">Değerler virgülle ayrılır, büyük/küçük harf duyarsızdır. Excel'deki TRUE/FALSE ve 1/0 her zaman tanınır.</div>
+            break;
+
+        case DataType.Array:
+            <div class="field">
+                <label>Ayraç</label>
+                <select class="x-select" value="@SeparatorOption(s.ArraySeparator)" @onchange="e => Set(() => OnSeparator(e))">
+                    <option value=",">Virgül ( , )</option>
+                    <option value=";">Noktalı virgül ( ; )</option>
+                    <option value="|">Dikey çizgi ( | )</option>
+                    <option value="custom">Özel…</option>
+                </select>
+            </div>
+            @if (SeparatorOption(s.ArraySeparator) == "custom" || _customSeparator)
+            {
+                <div class="field">
+                    <label>Özel ayraç</label>
+                    <input class="x-input" value="@s.ArraySeparator" @onchange="SetCustomSeparator" />
+                </div>
+            }
+            <div class="field">
+                <label>Eleman tipi</label>
+                <EnumSelect TEnum="DataType" Value="s.ArrayElementType" Options="Labels.ArrayElementTypes" Labels="Labels.DataType"
+                            ValueChanged="v => Set(() => s.ArrayElementType = v)" />
+            </div>
+            <CultureSelect Settings="s" />
+            break;
+
+        case DataType.String:
+            <div class="field wide hint">Değer, Excel'de görüntülendiği biçimiyle (biçimlendirilmiş metin) yazılır. Baştaki sıfırlar korunur.</div>
+            break;
+
+        default:
+            <div class="field wide hint">
+                Auto: hücrenin Excel'deki tipine göre yazılır (sayı → sayı, tarih → ISO, mantıksal → true/false, metin → string).
+                15 haneden uzun sayılar (TCKN, barkod) hassasiyet kaybı olmaması için string yazılır.
+            </div>
+            break;
+    }
+
+    @if (column is { EmptyPolicy: EmptyValuePolicy.DefaultValue })
+    {
+        <div class="field">
+            <label>Boş hücre için varsayılan değer</label>
+            <input class="x-input" value="@column.DefaultValue" placeholder="ör. 0, true, Bilinmiyor"
+                   @onchange="e => Set(() => column.DefaultValue = e.Value?.ToString())" />
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public FieldDefinition Field { get; set; } = default!;
+
+    private bool _customSeparator;
+
+    private void Set(Action change)
+    {
+        change();
+        State.ProfileChanged();
+    }
+
+    private static string? Clean(ChangeEventArgs e) => string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString()!.Trim();
+
+    private static string SeparatorOption(string sep) => sep is "," or ";" or "|" ? sep : "custom";
+
+    private void SetCustomSeparator(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        Field.TypeSettings.ArraySeparator = string.IsNullOrEmpty(v) ? "," : v;
+        State.ProfileChanged();
+    }
+
+    private void OnSeparator(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString() ?? ",";
+        _customSeparator = v == "custom";
+        if (!_customSeparator)
+            Field.TypeSettings.ArraySeparator = v;
+    }
+}

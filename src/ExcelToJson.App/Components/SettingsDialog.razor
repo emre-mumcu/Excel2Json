@@ -1,0 +1,100 @@
+@* Uygulama ayarları: tema, varsayılan adlandırma stili, varsayılan çıktı şekli, önizleme kayıt sayısı *@
+@inject SettingsService Settings
+@inject ThemeService Theme
+@inject AppState State
+@inject ExcelToJson.Core.Json.Shapes.OutputShapeRegistry Shapes
+
+<div class="overlay" role="dialog" aria-modal="true">
+    <div class="dialog">
+        <header>
+            <FluentIcon Value="@(new Icons.Regular.Size24.Settings())" Color="Color.Accent" />
+            Uygulama ayarları
+        </header>
+        <div class="body stack">
+            <div class="field">
+                <label>Tema</label>
+                <div class="radio-row">
+                    @foreach (var (mode, label) in new[] { (ThemeMode.System, "Sistem"), (ThemeMode.Light, "Açık"), (ThemeMode.Dark, "Koyu") })
+                    {
+                        <label><input type="radio" name="theme" checked="@(Theme.Mode == mode)" @onchange="() => Theme.SetMode(mode)" /> @label</label>
+                    }
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="field">
+                    <label>Varsayılan adlandırma stili</label>
+                    <EnumSelect TEnum="NamingStyle" Value="_s.DefaultNamingStyle" ValueChanged="v => _s.DefaultNamingStyle = v" Labels="Labels.NamingStyle" />
+                </div>
+                <div class="field">
+                    <label>Varsayılan çıktı şekli</label>
+                    <select class="x-select" @bind="_s.DefaultShape">
+                        @foreach (var s in Shapes.All)
+                        {
+                            <option value="@s.Id">@s.DisplayName</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Önizleme kayıt sayısı</label>
+                    <input type="number" class="x-input" min="1" max="500" @bind="_s.PreviewRecordCount" />
+                </div>
+            </div>
+
+            <label class="check-label">
+                <input type="checkbox" class="x-check" @bind="_s.DefaultTransliterateTurkish" />
+                Alias üretirken Türkçe karakterleri dönüştür (ı→i, ş→s, ğ→g, ü→u, ö→o, ç→c)
+            </label>
+
+            <div class="hint">
+                Ayarlar: <span class="mono">@AppPaths.SettingsFile</span><br />
+                Günlükler: <span class="mono">@AppPaths.LogDirectory</span>
+            </div>
+        </div>
+        <footer>
+            <FluentButton Appearance="Appearance.Stealth" OnClick="OnClose">Vazgeç</FluentButton>
+            <FluentButton Appearance="Appearance.Accent" OnClick="Save">Kaydet</FluentButton>
+        </footer>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private sealed class Draft
+    {
+        public NamingStyle DefaultNamingStyle { get; set; }
+        public bool DefaultTransliterateTurkish { get; set; }
+        public string DefaultShape { get; set; } = OutputShapes.ArrayOfObjects;
+        public int PreviewRecordCount { get; set; }
+    }
+
+    private Draft _s = new();
+
+    protected override void OnInitialized()
+    {
+        var c = Settings.Current;
+        _s = new Draft
+        {
+            DefaultNamingStyle = c.DefaultNamingStyle,
+            DefaultTransliterateTurkish = c.DefaultTransliterateTurkish,
+            DefaultShape = c.DefaultShape,
+            PreviewRecordCount = c.PreviewRecordCount
+        };
+    }
+
+    private async Task Save()
+    {
+        var previewChanged = Settings.Current.PreviewRecordCount != _s.PreviewRecordCount;
+        Settings.Update(c =>
+        {
+            c.DefaultNamingStyle = _s.DefaultNamingStyle;
+            c.DefaultTransliterateTurkish = _s.DefaultTransliterateTurkish;
+            c.DefaultShape = _s.DefaultShape;
+            c.PreviewRecordCount = Math.Clamp(_s.PreviewRecordCount, 1, 500);
+        });
+        if (previewChanged)
+            State.SchedulePreview();
+        await OnClose.InvokeAsync();
+    }
+}

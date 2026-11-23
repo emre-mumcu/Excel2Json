@@ -1,0 +1,164 @@
+@* Çoklu sayfa export: sayfa seçimi, sayfa başına profil, ayrı dosyalar / tek dosya *@
+@inherits StateComponent
+@using ExcelToJson.Core.Export
+@inject ShellService Shell
+
+<div class="card">
+    <h3>
+        <FluentIcon Value="@(new Icons.Regular.Size20.TableSimple())" Color="Color.Neutral" /> Çoklu sayfa export
+        <span class="hint" style="font-weight:400">— birden fazla sayfayı, her biri kendi profiliyle tek seferde</span>
+        <span class="grow"></span>
+        <button class="link-btn" @onclick="Toggle" aria-expanded="@_open">@(_open ? "Gizle" : "Göster")</button>
+    </h3>
+
+    @if (_open && State.Workbook is { } wb)
+    {
+        var multi = State.Multi;
+        var sheets = wb.Sheets.Where(s => !s.IsEmpty).ToList();
+
+        <div class="toolbar">
+            <button class="link-btn" @onclick="() => SetAll(true)">Tümünü seç</button>
+            <button class="link-btn" @onclick="() => SetAll(false)">Hiçbirini</button>
+            <span class="grow"></span>
+            <span class="muted">@multi.SelectedCount / @sheets.Count sayfa seçili</span>
+        </div>
+
+        <table class="map">
+            <thead>
+                <tr>
+                    <th style="width:28px">✓</th>
+                    <th>Sayfa</th>
+                    <th>Satır</th>
+                    <th style="min-width:280px">Profil</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var s in sheets)
+                {
+                    if (!multi.Items.TryGetValue(s.Name, out var item))
+                        continue;
+                    var isCurrent = s.Name == State.Profile.SheetName;
+                    <tr class="@(item.Selected ? "" : "excluded")">
+                        <td><input type="checkbox" class="x-check" checked="@item.Selected" @onchange="e => item.Selected = e.Value is true" aria-label="@s.Name" /></td>
+                        <td class="dim">
+                            @s.Name
+                            @if (isCurrent) { <span class="tag accent">açık sayfa</span> }
+                            @if (s.IsHidden) { <span class="tag warn">gizli</span> }
+                        </td>
+                        <td class="dim muted">~@s.RowCount.ToString("N0")</td>
+                        <td class="dim">
+                            <select class="x-select small" style="width:100%" value="@item.Choice" @onchange="e => item.Choice = e.Value?.ToString() ?? MultiSheetItem.DefaultChoice">
+                                @if (isCurrent)
+                                {
+                                    <option value="@MultiSheetItem.CurrentChoice">Mevcut ayarlar (Alanlar/Çıktı adımları)</option>
+                                }
+                                <option value="@MultiSheetItem.DefaultChoice">Varsayılan – tüm sütunlar, nesne dizisi</option>
+                                @foreach (var p in OrderedProfiles(s.Name))
+                                {
+                                    <option value="@(MultiSheetItem.ProfilePrefix + p.Name)">Profil: @p.Name @(Matches(p, s.Name) ? "★" : $"({p.SheetName ?? "—"})")</option>
+                                }
+                            </select>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <div class="hint" style="margin-top:6px">★ bu dosya ve sayfa için kaydedilmiş profil. Başka bir sayfa için kaydedilmiş profiller sütunlarla başlık adına göre eşleştirilir.</div>
+
+        <div class="grid-2" style="margin-top:14px">
+            <div class="field">
+                <label>Çıktı</label>
+                <div class="radio-row">
+                    <label><input type="radio" name="multi-mode" checked="@(multi.Mode == MultiSheetMode.SeparateFiles)" @onchange="() => multi.Mode = MultiSheetMode.SeparateFiles" /> Ayrı dosyalar</label>
+                    <label><input type="radio" name="multi-mode" checked="@(multi.Mode == MultiSheetMode.SingleFile)" @onchange="() => multi.Mode = MultiSheetMode.SingleFile" /> Tek dosya <span class="mono">{ "sayfa": … }</span></label>
+                </div>
+            </div>
+            @if (multi.Mode == MultiSheetMode.SingleFile)
+            {
+                <div class="field">
+                    <label>Dosya adı şablonu</label>
+                    <input class="x-input mono" value="@multi.CombinedFileNameTemplate" spellcheck="false"
+                           @onchange="e => multi.CombinedFileNameTemplate = e.Value?.ToString() ?? string.Empty" />
+                </div>
+            }
+        </div>
+        <div class="hint" style="margin-top:6px">
+            @if (multi.Mode == MultiSheetMode.SeparateFiles)
+            {
+                <span>Her sayfa, profilindeki dosya adı şablonu ve format ayarlarıyla ayrı bir dosyaya yazılır. Bir sayfanın başarısız olması diğerlerini durdurmaz.</span>
+            }
+            else
+            {
+                <span>Her sayfanın değeri kendi profilinin çıktı şekliyle üretilir; girinti ve kodlama yukarıdaki format ayarlarından gelir. Herhangi bir sayfa başarısız olursa dosya yazılmaz.</span>
+            }
+            Hedef klasör ve "dosya zaten varsa" ayarı yukarıdaki ayarlardır.
+        </div>
+
+        <div class="row end" style="margin-top:14px">
+            <FluentButton Appearance="Appearance.Accent" OnClick="State.ExportMultiAsync" Disabled="@(State.Busy is not null || multi.SelectedCount == 0)"
+                          IconStart="@(new Icons.Regular.Size20.ArrowExport())">@multi.SelectedCount sayfayı export et</FluentButton>
+        </div>
+
+        @if (multi.LastResult is { } last)
+        {
+            <div class="message-bar @(last.Succeeded ? "success" : "warning")" style="margin-top:12px; margin-bottom:0">
+                <div class="grow">
+                    <b>Son çoklu export:</b> @last.SucceededCount/@last.Sheets.Count sayfa · @last.TotalRecords.ToString("N0") kayıt · @last.Duration.TotalSeconds.ToString("0.0") sn
+                    <ul>
+                        @foreach (var s in last.Sheets)
+                        {
+                            <li>
+                                @s.SheetName:
+                                @if (s.Succeeded)
+                                {
+                                    <span class="text-success">✓ @s.Run.RecordCount.ToString("N0") kayıt</span>
+                                    @if (s.FilePath is { } fp)
+                                    {
+                                        <button class="link-btn mono" style="margin-left:6px" @onclick="() => Shell.OpenFile(fp)">@Path.GetFileName(fp)</button>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="text-error">✖ @(s.Run.FatalError ?? $"{s.Run.IssueCount} dönüşüm hatası")</span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                </div>
+                @if (last.WrittenFiles.FirstOrDefault() is { } first)
+                {
+                    <FluentButton Appearance="Appearance.Stealth" OnClick="() => Shell.OpenFolder(first)">Klasörü aç</FluentButton>
+                    @if (last.CombinedFilePath is { } combined)
+                    {
+                        <FluentButton Appearance="Appearance.Stealth" OnClick="() => Shell.OpenFile(combined)">Dosyayı aç</FluentButton>
+                    }
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private bool _open;
+    private IReadOnlyList<Core.Profiles.ProfileSummary> _profiles = [];
+
+    private async Task Toggle()
+    {
+        _open = !_open;
+        if (_open)
+            _profiles = await State.RefreshMultiSheetAsync();
+    }
+
+    private void SetAll(bool selected)
+    {
+        foreach (var item in State.Multi.Items.Values)
+            item.Selected = selected;
+    }
+
+    private bool Matches(Core.Profiles.ProfileSummary p, string sheet) =>
+        string.Equals(p.SourceFileName, State.Workbook?.FileName, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(p.SheetName, sheet, StringComparison.OrdinalIgnoreCase);
+
+    private IEnumerable<Core.Profiles.ProfileSummary> OrderedProfiles(string sheet) =>
+        _profiles.OrderByDescending(p => Matches(p, sheet)).ThenByDescending(p => p.UpdatedAt);
+}

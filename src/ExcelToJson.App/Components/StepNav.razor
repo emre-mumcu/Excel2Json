@@ -1,0 +1,76 @@
+@* Sol dikey adım navigasyonu. Serbest geçiş; hatalı/eksik adımlar rozetle işaretlenir. *@
+@inherits StateComponent
+
+<nav class="step-nav" aria-label="Adımlar">
+    @foreach (var step in Steps)
+    {
+        var (errors, warnings) = Count(step.Area);
+        <button class="step @(State.CurrentStep == step.Step ? "active" : "") @(IsDone(step) ? "done" : "")"
+                @onclick="() => State.GoTo(step.Step)"
+                title="@Tooltip(step, errors, warnings)"
+                aria-current="@(State.CurrentStep == step.Step ? "step" : null)">
+            <span class="num">
+                @if (IsDone(step))
+                {
+                    <FluentIcon Value="@(new Icons.Regular.Size16.Checkmark())" Color="Color.Fill" />
+                }
+                else
+                {
+                    @((int)step.Step + 1)
+                }
+            </span>
+            <span>
+                @step.Title
+                <span class="sub">@step.Subtitle</span>
+            </span>
+            @* Dosya/sayfa seçilmeden sonraki adımlar için rozet gösterilmez (henüz ulaşılmadılar). *@
+            @if (step.Step != WizardStep.File && !State.HasSheet)
+            {
+            }
+            else if (errors > 0)
+            {
+                <span class="badge-dot error">@errors</span>
+            }
+            else if (warnings > 0)
+            {
+                <span class="badge-dot warning">!</span>
+            }
+        </button>
+    }
+
+    <div class="footer">
+        <div><kbd>Ctrl+O</kbd> Dosya aç</div>
+        <div><kbd>Ctrl+S</kbd> Profili kaydet</div>
+        <div><kbd>Ctrl+E</kbd> Export</div>
+        <div><kbd>F5</kbd> Dosyayı yenile</div>
+    </div>
+</nav>
+
+@code {
+    private sealed record StepDef(WizardStep Step, string Title, string Subtitle, ValidationArea Area);
+
+    private static readonly StepDef[] Steps =
+    [
+        new(WizardStep.File, "Dosya", "Excel dosyası seçin", ValidationArea.File),
+        new(WizardStep.Sheet, "Sayfa", "Sayfa ve başlık ayarları", ValidationArea.Sheet),
+        new(WizardStep.Fields, "Alanlar", "Sütunlar ve ek alanlar", ValidationArea.Fields),
+        new(WizardStep.Output, "Çıktı", "JSON yapısı", ValidationArea.Output),
+        new(WizardStep.Export, "Export", "Kaydet", ValidationArea.Export)
+    ];
+
+    private (int Errors, int Warnings) Count(ValidationArea area) =>
+        (State.Validation.Errors.Count(m => m.Area == area), State.Validation.Warnings.Count(m => m.Area == area));
+
+    private bool IsDone(StepDef step) => step.Step switch
+    {
+        WizardStep.File => State.Workbook is not null,
+        WizardStep.Sheet => State.HasSheet && !State.Validation.HasErrors(ValidationArea.Sheet),
+        WizardStep.Fields => State.HasSheet && !State.Validation.HasErrors(ValidationArea.Fields),
+        WizardStep.Output => State.HasSheet && !State.Validation.HasErrors(ValidationArea.Output),
+        WizardStep.Export => State.LastExport is not null,
+        _ => false
+    };
+
+    private static string Tooltip(StepDef step, int errors, int warnings) =>
+        errors > 0 ? $"{step.Title}: {errors} hata" : warnings > 0 ? $"{step.Title}: {warnings} uyarı" : step.Subtitle;
+}

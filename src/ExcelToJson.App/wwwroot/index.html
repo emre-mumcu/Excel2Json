@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Excel → JSON</title>
+    <base href="/" />
+    <link href="_content/Microsoft.FluentUI.AspNetCore.Components/css/reboot.css" rel="stylesheet" />
+    <link href="css/app.css" rel="stylesheet" />
+</head>
+<body>
+    <div id="app">
+        <div class="app-loading">Yükleniyor…</div>
+    </div>
+
+    <div id="blazor-error-ui">
+        Beklenmeyen bir hata oluştu.
+        <a href="" class="reload">Yeniden yükle</a>
+        <a class="dismiss">🗙</a>
+    </div>
+
+    <script src="_framework/blazor.webview.js"></script>
+    <script>
+        // Host köprüsü (yalnızca birkaç satır; arayüzün tamamı Razor/C# ile yazılmıştır).
+        // 1) Sürükle-bırak: WebView2 dosyanın tam yolunu DOM'a vermez; dosyalar host'a
+        //    postMessageWithAdditionalObjects ile gönderilir, host CoreWebView2File.Path ile yolu alır.
+        // 2) Klavye kısayolları: Ctrl+O/S/E ve F5 host'a iletilir (tarayıcı varsayılanları engellenir).
+        (function () {
+            const wv = window.chrome && window.chrome.webview;
+            window.addEventListener('dragover', e => {
+                e.preventDefault();
+                if (e.dataTransfer) e.dataTransfer.dropEffect = e.dataTransfer.types.includes('Files') ? 'copy' : 'move';
+            });
+            window.addEventListener('drop', e => {
+                e.preventDefault();
+                const files = e.dataTransfer && e.dataTransfer.files;
+                if (wv && files && files.length > 0 && wv.postMessageWithAdditionalObjects) {
+                    wv.postMessageWithAdditionalObjects('x2j:drop', files);
+                }
+            });
+            document.addEventListener('keydown', e => {
+                let key = null;
+                if (e.ctrlKey && !e.altKey && !e.shiftKey) {
+                    const k = e.key.toLowerCase();
+                    if (k === 'o' || k === 's' || k === 'e') key = 'ctrl+' + k;
+                } else if (e.key === 'F5' && !e.ctrlKey) {
+                    key = 'f5';
+                }
+                if (key) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (wv) wv.postMessage('x2j:key:' + key);
+                }
+            }, true);
+        })();
+    </script>
+</body>
+</html>

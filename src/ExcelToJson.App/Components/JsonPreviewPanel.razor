@@ -1,0 +1,133 @@
+@* Sağdaki daraltılabilir canlı JSON önizleme paneli *@
+@inherits StateComponent
+@inject SettingsService Settings
+@inject ShellService Shell
+@inject NotificationService Notify
+
+@if (!Settings.Current.PreviewPanelOpen)
+{
+    <aside class="preview-pane collapsed">
+        <button class="icon-btn" title="Önizlemeyi göster" @onclick="() => Toggle(true)">
+            <FluentIcon Value="@(new Icons.Regular.Size20.PanelRight())" Color="Color.Neutral" />
+        </button>
+        <span class="collapsed-label">JSON önizleme</span>
+    </aside>
+}
+else
+{
+    <aside class="preview-pane" aria-label="JSON önizleme">
+        <div class="preview-head">
+            <FluentIcon Value="@(new Icons.Regular.Size20.Braces())" Color="Color.Accent" />
+            <span class="title">Önizleme</span>
+            <span class="muted">ilk</span>
+            <select class="x-select small" value="@Settings.Current.PreviewRecordCount" @onchange="OnCountChange" title="Önizlenecek kayıt sayısı">
+                @foreach (var n in Counts)
+                {
+                    <option value="@n">@n</option>
+                }
+            </select>
+            <span class="muted">kayıt</span>
+            <span class="grow"></span>
+            @if (State.PreviewLoading)
+            {
+                <FluentProgressRing Width="16px" />
+            }
+            <button class="icon-btn" title="Panoya kopyala" disabled="@(State.PreviewJson is null)" @onclick="Copy">
+                <FluentIcon Value="@(new Icons.Regular.Size20.Copy())" Color="Color.Neutral" />
+            </button>
+            <button class="icon-btn" title="Paneli daralt" @onclick="() => Toggle(false)">
+                <FluentIcon Value="@(new Icons.Regular.Size20.PanelRightContract())" Color="Color.Neutral" />
+            </button>
+        </div>
+
+        <div class="preview-body">
+            @if (State.PreviewError is { } err)
+            {
+                <div class="message-bar error" style="margin:12px">@err</div>
+            }
+            @if (State.PreviewJson is not null)
+            {
+                <div class="code">@Highlighted</div>
+            }
+            else if (State.PreviewError is null)
+            {
+                <div class="preview-empty">@(State.PreviewLoading ? "Önizleme hazırlanıyor…" : "Önizleme yok.")</div>
+            }
+        </div>
+
+        @if (State.PreviewResult is { } r)
+        {
+            <div class="preview-foot">
+                <div class="summary">
+                    <span title="Okuma ayarlarına göre veri satırı sayısı">Toplam kayıt: <b>@r.TotalRows.ToString("N0")</b></span>
+                    <span>Atlanan boş satır: <b>@r.SkippedEmptyRows.ToString("N0")</b></span>
+                    @if (r.SkippedHiddenRows > 0)
+                    {
+                        <span>Atlanan gizli satır: <b>@r.SkippedHiddenRows.ToString("N0")</b></span>
+                    }
+                    <span class="@(r.IssueCount > 0 ? "text-warning" : "")">Dönüşüm uyarısı: <b>@r.IssueCount.ToString("N0")</b></span>
+                </div>
+                @foreach (var w in r.Warnings)
+                {
+                    <div class="text-warning" style="margin-top:4px">⚠ @w</div>
+                }
+                @if (r.Issues.Count > 0)
+                {
+                    <ul class="issue-list">
+                        @foreach (var issue in r.Issues.Take(200))
+                        {
+                            <li @onclick="() => State.FocusField(issue.FieldId)" title="Alanı göster">
+                                <span class="where">Satır @(issue.RowNumber > 0 ? issue.RowNumber : "—") · @(issue.ColumnLetter ?? "ek") · @issue.FieldAlias</span>
+                                <span>
+                                    <span class="mono">"@Truncate(issue.RawValue)"</span> → @Labels.DataType[issue.TargetType]:
+                                    <span class="muted">@issue.Message</span>
+                                </span>
+                            </li>
+                        }
+                    </ul>
+                    @if (r.IssueCount > r.Issues.Count || r.Issues.Count > 200)
+                    {
+                        <div class="muted">… ve @(r.IssueCount - Math.Min(200, r.Issues.Count)) hata daha</div>
+                    }
+                }
+            </div>
+        }
+    </aside>
+}
+
+@code {
+    private static readonly int[] Counts = [5, 10, 25, 50, 100];
+    private string? _lastJson;
+    private MarkupString _html;
+
+    private MarkupString Highlighted
+    {
+        get
+        {
+            if (!ReferenceEquals(_lastJson, State.PreviewJson))
+            {
+                _lastJson = State.PreviewJson;
+                _html = JsonHighlighter.ToHtml(_lastJson);
+            }
+            return _html;
+        }
+    }
+
+    private void Toggle(bool open) => Settings.Update(s => s.PreviewPanelOpen = open);
+
+    private void OnCountChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var n))
+            State.SetPreviewCount(n);
+    }
+
+    private async Task Copy()
+    {
+        if (State.PreviewJson is null)
+            return;
+        await Shell.CopyToClipboardAsync(State.PreviewJson);
+        Notify.Info("Önizleme panoya kopyalandı");
+    }
+
+    private static string Truncate(string? s) => s is null ? "" : s.Length > 40 ? s[..40] + "…" : s;
+}

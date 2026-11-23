@@ -1,0 +1,122 @@
+@* Ek alan (veya kök alan) kaynak ayarları *@
+@inject AppState State
+
+<div class="custom-editor" style="margin-bottom:8px">
+    <div class="field">
+        <label>Değer kaynağı</label>
+        <EnumSelect TEnum="CustomFieldSource" Value="Field.Source" Labels="Labels.Source" Options="Sources"
+                    ValueChanged="v => Set(() => Field.Source = v)" />
+    </div>
+
+    @switch (Field.Source)
+    {
+        case CustomFieldSource.Constant:
+            <div class="field">
+                <label>Sabit değer</label>
+                <input class="x-input" value="@Field.Value" placeholder="ör. ERP, true, 2" @onchange="e => Set(() => Field.Value = e.Value?.ToString())" />
+            </div>
+            @if (IsRoot)
+            {
+                <div class="field">
+                    <label>Tip</label>
+                    <EnumSelect TEnum="DataType" Value="Field.Type" Labels="Labels.DataType" ValueChanged="v => Set(() => Field.Type = v)" />
+                </div>
+            }
+            <div class="field wide hint">Auto tipte <span class="mono">true/false</span> mantıksal, <span class="mono">2</span> veya <span class="mono">2.5</span> sayı, diğerleri metin olarak yazılır.</div>
+            break;
+
+        case CustomFieldSource.Template:
+            <div class="field wide">
+                <label>Şablon</label>
+                <input class="x-input mono" value="@Field.Value" placeholder="@(IsRoot ? "{sheet} – {count} kayıt" : "{firstName} {lastName} veya PRD-{productCode}")"
+                       @onchange="e => Set(() => Field.Value = e.Value?.ToString())" spellcheck="false" />
+            </div>
+            <div class="field wide hint">
+                Kullanılabilir yer tutucular (eklemek için tıklayın):
+                @foreach (var p in Placeholders())
+                {
+                    <button class="link-btn mono" style="margin:0 6px" @onclick="() => Insert(p)">{@p}</button>
+                }
+                @if (!IsRoot)
+                {
+                    <div>Placeholder'lar alias'a veya Excel başlığına referans verebilir; sütun dahil edilmemiş olsa bile kullanılabilir. Süslü parantez için <span class="mono">{{ }}</span> yazın.</div>
+                }
+            </div>
+            break;
+
+        case CustomFieldSource.RowNumber:
+            <div class="field">
+                <label>Numara türü</label>
+                <EnumSelect TEnum="RowNumberMode" Value="Field.RowNumberMode" Labels="Labels.RowNumber" ValueChanged="v => Set(() => Field.RowNumberMode = v)" />
+            </div>
+            break;
+
+        case CustomFieldSource.AutoIncrement:
+            <div class="field">
+                <label>Başlangıç</label>
+                <input type="number" class="x-input" value="@Field.Start" @onchange="e => Set(() => Field.Start = ParseLong(e, 1))" />
+            </div>
+            <div class="field">
+                <label>Artış</label>
+                <input type="number" class="x-input" value="@Field.Step" @onchange="e => Set(() => Field.Step = ParseLong(e, 1))" />
+            </div>
+            break;
+
+        case CustomFieldSource.Guid:
+            <div class="field wide hint">Her kayıt için yeni bir GUID üretilir (ör. <span class="mono">3f2504e0-4f89-11d3-9a0c-0305e82c3301</span>).</div>
+            break;
+
+        case CustomFieldSource.Timestamp:
+            <div class="field">
+                <label>Saat</label>
+                <EnumSelect TEnum="TimestampMode" Value="Field.TimestampMode" Labels="Labels.Timestamp" ValueChanged="v => Set(() => Field.TimestampMode = v)" />
+            </div>
+            <div class="field">
+                <label>Format (opsiyonel)</label>
+                <input class="x-input" value="@Field.Format" placeholder="ISO 8601" @onchange="e => Set(() => Field.Format = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString())" />
+            </div>
+            break;
+
+        case CustomFieldSource.Json:
+            <div class="field wide">
+                <label>Sabit JSON</label>
+                <textarea class="x-textarea" spellcheck="false" placeholder='{ "currency": "TRY", "tags": ["a", "b"] }'
+                          @onchange="e => Set(() => Field.Value = e.Value?.ToString())">@Field.Value</textarea>
+                @if (!ProfileValidator.IsValidJson(Field.Value, out var jsonError))
+                {
+                    <span class="text-error" style="font-size:12px">Geçersiz JSON: @jsonError</span>
+                }
+                else
+                {
+                    <span class="text-success" style="font-size:12px">✓ Geçerli JSON</span>
+                }
+            </div>
+            break;
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CustomField Field { get; set; } = default!;
+    [Parameter] public bool IsRoot { get; set; }
+
+    private IEnumerable<CustomFieldSource> Sources => IsRoot
+        ? [CustomFieldSource.Constant, CustomFieldSource.Template, CustomFieldSource.Guid, CustomFieldSource.Timestamp, CustomFieldSource.Json]
+        : Enum.GetValues<CustomFieldSource>();
+
+    private void Set(Action change)
+    {
+        change();
+        State.ProfileChanged();
+    }
+
+    private IEnumerable<string> Placeholders()
+    {
+        if (IsRoot)
+            return Core.Json.ConversionPlan.RootPlaceholders;
+        return State.Profile.Fields.OfType<ColumnField>().Select(c => c.Alias).Where(a => !string.IsNullOrWhiteSpace(a)).Take(40);
+    }
+
+    private void Insert(string placeholder) => Set(() => Field.Value = (Field.Value ?? string.Empty) + "{" + placeholder + "}");
+
+    private static long ParseLong(ChangeEventArgs e, long fallback) => long.TryParse(e.Value?.ToString(), out var v) ? v : fallback;
+}

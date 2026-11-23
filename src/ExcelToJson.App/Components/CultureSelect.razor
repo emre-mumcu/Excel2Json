@@ -1,0 +1,21 @@
+@inject AppState State
+
+<div class="field">
+    <label>Ondalık ayracı / kültür</label>
+    <select class="x-select" value="@Settings.Culture" @onchange="OnChange">
+        @foreach (var (value, label) in Labels.Cultures)
+        {
+            <option value="@value">@label</option>
+        }
+    </select>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public TypeSettings Settings { get; set; } = default!;
+
+    private void OnChange(ChangeEventArgs e)
+    {
+        Settings.Culture = e.Value?.ToString() ?? string.Empty;
+        State.ProfileChanged();
+    }
+}

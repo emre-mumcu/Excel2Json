@@ -1,0 +1,75 @@
+@* 1. Adım: Dosya seçimi, sürükle-bırak, son dosyalar *@
+@inherits StateComponent
+@inject SettingsService Settings
+
+<h1 class="step-title">Dosya</h1>
+<p class="step-desc">Dönüştürmek istediğiniz Excel çalışma kitabını seçin (.xlsx, .xlsm). Dosya Excel'de açık olsa bile okunabilir.</p>
+
+<div class="drop-zone @(_over ? "over" : "")"
+     @ondragenter="() => _over = true" @ondragleave="() => _over = false" @ondrop="() => _over = false">
+    <FluentIcon Value="@(new Icons.Regular.Size48.Document())" Color="Color.Accent" />
+    <div class="big">Excel dosyasını buraya sürükleyip bırakın</div>
+    <div class="muted">veya</div>
+    <FluentButton Appearance="Appearance.Accent" OnClick="State.PickAndOpenFileAsync"
+                  IconStart="@(new Icons.Regular.Size20.FolderOpen())">Dosya Seç…</FluentButton>
+    <div class="hint">Kısayol: <kbd>Ctrl+O</kbd> · Eski <b>.xls</b> biçimi desteklenmez; dosyayı Excel'de <b>.xlsx</b> olarak kaydedin.</div>
+</div>
+
+@if (State.Workbook is { } wb)
+{
+    <div class="card" style="margin-top:16px">
+        <h3>
+            <FluentIcon Value="@(new Icons.Regular.Size20.DocumentTable())" Color="Color.Accent" />
+            Açık dosya
+            <span class="grow"></span>
+            <FluentButton Appearance="Appearance.Stealth" OnClick="State.RefreshAsync" Title="Dosyayı diskten yeniden oku (F5)"
+                          IconStart="@(new Icons.Regular.Size16.ArrowSync())">Yenile</FluentButton>
+            <FluentButton Appearance="Appearance.Stealth" OnClick="State.CloseFile"
+                          IconStart="@(new Icons.Regular.Size16.Dismiss())">Kapat</FluentButton>
+        </h3>
+        <div class="stats">
+            <div class="stat"><div class="label">Dosya adı</div><div class="value">@wb.FileName</div></div>
+            <div class="stat"><div class="label">Boyut</div><div class="value">@AppState.FormatSize(wb.FileSize)</div></div>
+            <div class="stat"><div class="label">Sayfa sayısı</div><div class="value">@wb.Sheets.Count</div></div>
+            <div class="stat"><div class="label">Okunma zamanı</div><div class="value">@wb.LoadedAt.ToString("HH:mm:ss")</div></div>
+        </div>
+        <div class="hint" style="margin-top:8px" title="@wb.FilePath">@wb.FilePath</div>
+        <div class="row end" style="margin-top:12px">
+            <FluentButton Appearance="Appearance.Accent" OnClick="() => State.GoTo(WizardStep.Sheet)"
+                          IconEnd="@(new Icons.Regular.Size16.ChevronRight())">Sayfa seçimine geç</FluentButton>
+        </div>
+    </div>
+}
+
+<div class="card" style="margin-top:16px">
+    <h3><FluentIcon Value="@(new Icons.Regular.Size20.History())" Color="Color.Neutral" /> Son açılan dosyalar</h3>
+    @{
+        var recent = Settings.GetRecentFiles();
+    }
+    @if (recent.Count == 0)
+    {
+        <p class="muted">Henüz dosya açılmadı.</p>
+    }
+    else
+    {
+        <div class="list">
+            @foreach (var path in recent)
+            {
+                <div class="list-item" @onclick="() => State.OpenFileAsync(path)" title="@path">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.DocumentTable())" Color="Color.Neutral" />
+                    <div class="ellipsis">
+                        <div class="title ellipsis">@Path.GetFileName(path)</div>
+                        <div class="sub ellipsis">@Path.GetDirectoryName(path)</div>
+                    </div>
+                    <button class="icon-btn" title="Listeden kaldır" @onclick="() => Settings.RemoveRecentFile(path)" @onclick:stopPropagation="true">
+                        <FluentIcon Value="@(new Icons.Regular.Size16.Dismiss())" Color="Color.Neutral" />
+                    </button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _over;
+}
